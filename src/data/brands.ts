@@ -1,0 +1,68 @@
+import { Brand } from "@/types";
+
+export const MOCK_BRANDS: Brand[] = [
+  {
+    id: "brand-apple",
+    name: "Apple",
+    slug: "apple",
+    logo: "https://upload.wikimedia.org/wikipedia/commons/f/fa/Apple_logo_black.svg",
+    description: "Premium smartphones, MacBooks, iPads and audio accessories",
+    isPopular: true,
+  },
+  {
+    id: "brand-samsung",
+    name: "Samsung",
+    slug: "samsung",
+    logo: "https://upload.wikimedia.org/wikipedia/commons/2/24/Samsung_Logo.svg",
+    description: "Industry-leading displays, Galaxy phones, and consumer home appliances",
+    isPopular: true,
+  },
+  {
+    id: "brand-sony",
+    name: "Sony",
+    slug: "sony",
+    logo: "https://upload.wikimedia.org/wikipedia/commons/c/ca/Sony_logo.svg",
+    description: "Noise cancelling headphones, Bravia TVs, cameras and gaming consoles",
+    isPopular: true,
+  },
+  {
+    id: "brand-boat",
+    name: "boAt",
+    slug: "boat",
+    logo: "https://upload.wikimedia.org/wikipedia/commons/7/77/Boat_Logo.png",
+    description: "India's #1 earwear brand with affordable bass-rich audio gear",
+    isPopular: true,
+  },
+  {
+    id: "brand-puma",
+    name: "Puma",
+    slug: "puma",
+    logo: "https://upload.wikimedia.org/wikipedia/commons/8/88/Puma-Logo.png",
+    description: "World-class sports performance and athletic lifestyle wear",
+    isPopular: true,
+  },
+  {
+    id: "brand-nike",
+    name: "Nike",
+    slug: "nike",
+    logo: "https://upload.wikimedia.org/wikipedia/commons/a/a6/Logo_NIKE.svg",
+    description: "Iconic athletic footwear, training apparel and activewear",
+    isPopular: true,
+  },
+  {
+    id: "brand-asus",
+    name: "ASUS",
+    slug: "asus",
+    logo: "https://upload.wikimedia.org/wikipedia/commons/2/2e/ASUS_Logo.svg",
+    description: "ROG gaming laptops, ZenBooks, and high performance hardware",
+    isPopular: true,
+  },
+  {
+    id: "brand-realme",
+    name: "realme",
+    slug: "realme",
+    logo: "https://upload.wikimedia.org/wikipedia/commons/7/7b/Realme_logo.svg",
+    description: "Trendsetting technology smartphones and lifestyle gadgets",
+    isPopular: false,
+  },
+];

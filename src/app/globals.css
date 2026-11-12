@@ -1,0 +1,250 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #2874F0;
+  --color-primary-hover: #1259c7;
+  --color-primary-light: #eaf2ff;
+  --color-navy: #172337;
+  --color-navy-light: #21314d;
+  --color-accent: #FB641B;
+  --color-accent-hover: #e04e05;
+  --color-accent-light: #fff3ed;
+  --color-page-bg: #F1F3F6;
+  --color-surface: #FFFFFF;
+  --color-text-main: #212121;
+  --color-text-muted: #878787;
+  --color-text-subtle: #b0b0b0;
+  --color-discount: #388E3C;
+  --color-discount-light: #E8F5E9;
+  --color-rating-yellow: #FF9F00;
+  --color-border-subtle: #E0E0E0;
+  --color-border-divider: #F0F0F0;
+}
+
+:root {
+  --background: #F1F3F6;
+  --foreground: #212121;
+}
+
+/* ─── Smooth scroll ─────────────────────────────────────────── */
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* ─── Default transitions on interactive elements ────────────── */
+a,
+button {
+  transition: color 0.15s ease-in-out, background-color 0.15s ease-in-out,
+    border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out,
+    opacity 0.15s ease-in-out;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ─── Focus-visible accessibility ───────────────────────────── */
+:focus-visible {
+  outline: 2px solid #2874F0;
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ─── Scrollbar utilities ───────────────────────────────────── */
+
+/* Hide scrollbar completely (cross-browser) */
+.scrollbar-none {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE / Edge */
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none; /* Chrome / Safari / Opera */
+}
+
+/* Thin styled scrollbar for elements that should show one */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: #c0c0c0 transparent;
+}
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background-color: #c0c0c0;
+  border-radius: 4px;
+}
+
+/* ─── Skeleton / shimmer animation ─────────────────────────── */
+@keyframes shimmer {
+  0% {
+    background-position: -600px 0;
+  }
+  100% {
+    background-position: 600px 0;
+  }
+}
+
+.skeleton-shimmer,
+.animate-skeleton {
+  background: linear-gradient(
+    90deg,
+    #e8e8e8 25%,
+    #f5f5f5 50%,
+    #e8e8e8 75%
+  );
+  background-size: 1200px 100%;
+  animation: shimmer 1.4s infinite linear;
+  border-radius: 4px;
+}
+
+/* ─── Page-enter animation ──────────────────────────────────── */
+@keyframes fadeSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: fadeSlideUp 0.3s ease-out both;
+}
+
+/* ─── Press / active feedback ───────────────────────────────── */
+.press-active,
+.press-active:active {
+  transform: scale(0.97);
+  transition: transform 0.1s ease-in-out;
+}
+
+/* ─── Reusable E-commerce Card Styles ───────────────────────── */
+.card-ecommerce {
+  background-color: #ffffff;
+  border-radius: 4px;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.08);
+  border: 1px solid #f0f0f0;
+  transition: box-shadow 0.2s ease-in-out, transform 0.2s ease-in-out;
+}
+
+.card-ecommerce:hover {
+  box-shadow: 0 4px 12px 0 rgba(0, 0, 0, 0.12);
+}
+
+.card-flat {
+  background-color: #ffffff;
+  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+}
+
+/* ─── Reusable Button Classes ───────────────────────────────── */
+.btn-primary {
+  background-color: #2874F0;
+  color: #ffffff;
+  font-weight: 500;
+  border-radius: 2px;
+  padding: 0.625rem 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: background-color 0.15s ease-in-out;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn-primary:hover {
+  background-color: #1259c7;
+}
+
+.btn-buy-now {
+  background-color: #FB641B;
+  color: #ffffff;
+  font-weight: 600;
+  border-radius: 2px;
+  padding: 0.75rem 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: background-color 0.15s ease-in-out;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn-buy-now:hover {
+  background-color: #e04e05;
+}
+
+.btn-add-to-cart {
+  background-color: #ff9f00;
+  color: #ffffff;
+  font-weight: 600;
+  border-radius: 2px;
+  padding: 0.75rem 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  transition: background-color 0.15s ease-in-out;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn-add-to-cart:hover {
+  background-color: #e68f00;
+}
+
+.btn-outline-primary {
+  background-color: #ffffff;
+  color: #2874F0;
+  border: 1px solid #2874F0;
+  font-weight: 500;
+  border-radius: 2px;
+  padding: 0.5rem 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn-outline-primary:hover {
+  background-color: #eaf2ff;
+}
+
+/* ─── Assured Badge ─────────────────────────────────────────── */
+.badge-assured {
+  display: inline-flex;
+  align-items: center;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: #2874F0;
+}
+
+/* ─── Rating Badge (Flipkart Green Pill) ────────────────────── */
+.rating-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background-color: #388E3C;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 3px;
+  padding: 2px 6px;
+}
