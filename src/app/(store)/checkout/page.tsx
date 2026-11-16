@@ -570,12 +570,29 @@ export default function CheckoutPage() {
         if (simulateFailure) {
           throw new Error("Simulated failure (COD). Order was created as pending; please check your orders.");
         }
-        const fullOrder = await orderService.getOrderById(created.orderNumber || orderId);
-        if (!fullOrder) throw new Error("Order created but could not be loaded.");
+        // Try to load full order details; fall back to created data if DB lookup fails
+        let fullOrder: Order | null = null;
+        try {
+          fullOrder = await orderService.getOrderById(created.orderNumber || orderId);
+        } catch {
+          // DB may be temporarily unreachable; order was still created server-side
+          fullOrder = null;
+        }
+        if (!fullOrder) {
+          // Build a minimal order object from the creation response so the success page still works
+          fullOrder = (created as unknown as Order);
+          toast({
+            type: "warning",
+            title: "Order Placed",
+            message: `Order ID: ${created.orderNumber || orderId}. Order details will refresh shortly.`,
+          });
+        } else {
+          clearCart();
+          toast({ type: "success", title: "Order Placed Successfully!", message: `Order ID: ${(fullOrder as any).orderNumber || created.orderNumber}` });
+        }
         clearCart();
         setConfirmedOrder(fullOrder as Order);
         setCurrentStep(5);
-        toast({ type: "success", title: "Order Placed Successfully!", message: `Order ID: ${(fullOrder as any).orderNumber || created.orderNumber}` });
         return;
       }
 

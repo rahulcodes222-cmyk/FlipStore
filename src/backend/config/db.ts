@@ -11,8 +11,14 @@ import mongoose, { Mongoose, ConnectOptions } from 'mongoose';
 function getMongodbUri(): string {
   const uri = process.env.MONGODB_URI;
   if (!uri) {
+    const msg =
+      'MONGODB_URI is not defined in environment variables. On Vercel, add it under Project Settings → Environment Variables.';
+    if (process.env.NODE_ENV === 'production') {
+      // In production, throw a clear error so withDatabase can return a proper 503
+      throw new Error(msg);
+    }
     throw new Error(
-      'MONGODB_URI is not defined in environment variables. Please check .env.example and create .env.local',
+      `${msg} Please check .env.example and create .env.local`,
     );
   }
   return uri;
@@ -138,23 +144,33 @@ export async function connectDB(): Promise<Mongoose> {
   }
 }
 
+let dbRetryCount = 0;
+const MAX_DB_RETRIES = 2;
+
 export async function runWithDbReconnect<T>(fn: () => Promise<T>): Promise<T> {
   await connectDB();
   try {
     return await fn();
   } catch (error) {
     const msg = errMsg(error).toLowerCase();
-    if (
+    const isConnError =
       msg.includes('client must be connected') ||
       msg.includes('topology is closed') ||
       msg.includes('connection closed') ||
-      msg.includes('server selection timed out')
-    ) {
+      msg.includes('server selection timed out') ||
+      msg.includes('MONGODB_URI is not defined');
+
+    if (isConnError && dbRetryCount < MAX_DB_RETRIES) {
+      dbRetryCount++;
+      console.error(`[MongoDB] Connection error (retry ${dbRetryCount}/${MAX_DB_RETRIES}):`, errMsg(error));
       await resetMongoose();
       cached.promise = null;
       await connectDB();
       return await fn();
     }
+
+    // Reset retry counter after exhausting retries or non-connection error
+    dbRetryCount = 0;
     throw error;
   }
 }
