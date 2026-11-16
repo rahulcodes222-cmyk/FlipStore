@@ -95,21 +95,18 @@ const subOrderSchema = new Schema<ISubOrderDocument>(
       unique: true,
       trim: true,
       uppercase: true,
-      index: true,
     },
     orderId: {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
       type: Schema.Types.ObjectId as any,
       ref: 'Order',
       required: [true, 'Order reference is required.'],
-      index: true,
     },
     sellerId: {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
       type: Schema.Types.ObjectId as any,
       ref: 'User',
       required: [true, 'Seller reference is required.'],
-      index: true,
     },
     sellerName: {
       type: String,
@@ -135,7 +132,6 @@ const subOrderSchema = new Schema<ISubOrderDocument>(
       type: String,
       enum: ['PENDING', 'PROCESSING', 'PAID', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED'],
       default: 'PENDING',
-      index: true,
     },
     orderStatus: {
       type: String,
@@ -154,7 +150,6 @@ const subOrderSchema = new Schema<ISubOrderDocument>(
         'REFUNDED',
       ],
       default: 'PLACED',
-      index: true,
     },
     statusHistory: {
       type: [statusHistorySchema],
@@ -189,8 +184,7 @@ const subOrderSchema = new Schema<ISubOrderDocument>(
   },
 );
 
-// Indexes
-subOrderSchema.index({ subOrderNumber: 1 }, { unique: true });
+// Indexes (subOrderNumber unique index is created by field definition)
 subOrderSchema.index({ orderId: 1 });
 subOrderSchema.index({ sellerId: 1 });
 subOrderSchema.index({ paymentStatus: 1 });

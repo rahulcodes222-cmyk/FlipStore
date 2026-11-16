@@ -56,7 +56,6 @@ const orderItemSchema = new Schema(
       type: Schema.Types.ObjectId as any,
       ref: 'User',
       required: true,
-      index: true,
     },
   },
   { _id: false },
@@ -92,14 +91,12 @@ const orderSchema = new Schema<IOrderDocument>(
       unique: true,
       trim: true,
       uppercase: true,
-      index: true,
     },
     customerId: {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
       type: Schema.Types.ObjectId as any,
       ref: 'User',
       required: [true, 'Customer reference is required.'],
-      index: true,
     },
     customerName: {
       type: String,
@@ -138,7 +135,6 @@ const orderSchema = new Schema<IOrderDocument>(
       type: String,
       enum: ['PENDING', 'PROCESSING', 'PAID', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED'],
       default: 'PENDING',
-      index: true,
     },
     orderStatus: {
       type: String,
@@ -157,7 +153,6 @@ const orderSchema = new Schema<IOrderDocument>(
         'REFUNDED',
       ],
       default: 'PLACED',
-      index: true,
     },
     statusHistory: {
       type: [statusHistorySchema],
@@ -197,9 +192,8 @@ const orderSchema = new Schema<IOrderDocument>(
   },
 );
 
-// Indexes
+// Indexes (orderNumber unique index is created by field definition)
 orderSchema.index({ customerId: 1 });
-orderSchema.index({ orderNumber: 1 }, { unique: true });
 orderSchema.index({ paymentStatus: 1 });
 orderSchema.index({ orderStatus: 1 });
 orderSchema.index({ placedAt: -1 });

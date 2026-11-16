@@ -50,8 +50,7 @@ const brandSchema = new Schema<IBrandDocument>(
   },
 );
 
-// Indexes
-brandSchema.index({ slug: 1 }, { unique: true });
+// Indexes (slug unique index is created by field definition)
 brandSchema.index({ isPopular: 1 });
 brandSchema.index({ isActive: 1 });
 brandSchema.index({ name: 'text' });

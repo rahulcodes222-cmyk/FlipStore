@@ -42,7 +42,6 @@ const categorySchema = new Schema<ICategoryDocument>(
       type: Schema.Types.ObjectId as any,
       ref: 'Category',
       default: null,
-      index: true,
     },
     itemCount: {
       type: Number,
@@ -66,8 +65,7 @@ const categorySchema = new Schema<ICategoryDocument>(
   },
 );
 
-// Indexes
-categorySchema.index({ slug: 1 }, { unique: true });
+// Indexes (slug unique index is created by field definition)
 categorySchema.index({ parentId: 1 });
 categorySchema.index({ isFeatured: 1 });
 categorySchema.index({ isActive: 1 });

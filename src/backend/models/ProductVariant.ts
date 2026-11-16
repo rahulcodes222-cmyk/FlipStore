@@ -15,7 +15,6 @@ const productVariantSchema = new Schema<IProductVariantDocument>(
       type: Schema.Types.ObjectId as any,
       ref: 'Product',
       required: [true, 'Product reference is required.'],
-      index: true,
     },
     sku: {
       type: String,
@@ -61,9 +60,8 @@ const productVariantSchema = new Schema<IProductVariantDocument>(
   },
 );
 
-// Indexes
+// Indexes (sku unique index is created by field definition)
 productVariantSchema.index({ productId: 1 });
-productVariantSchema.index({ sku: 1 }, { unique: true });
 productVariantSchema.index({ size: 1, color: 1 });
 
 const ProductVariantModel: Model<IProductVariantDocument> =

@@ -15,7 +15,6 @@ const productSchema = new Schema<IProductDocument>(
       type: Schema.Types.ObjectId as any,
       ref: 'User',
       required: [true, 'Seller reference is required.'],
-      index: true,
     },
     name: {
       type: String,
@@ -44,13 +43,11 @@ const productSchema = new Schema<IProductDocument>(
       type: String,
       required: [true, 'Category is required.'],
       trim: true,
-      index: true,
     },
     categoryId: {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
       type: Schema.Types.ObjectId as any,
       ref: 'Category',
-      index: true,
     },
     subcategory: {
       type: String,
@@ -64,7 +61,6 @@ const productSchema = new Schema<IProductDocument>(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
       type: Schema.Types.ObjectId as any,
       ref: 'Brand',
-      index: true,
     },
     description: {
       type: String,
@@ -122,7 +118,6 @@ const productSchema = new Schema<IProductDocument>(
       type: String,
       enum: ['DRAFT', 'PUBLISHED', 'OUT_OF_STOCK', 'REJECTED'],
       default: 'DRAFT',
-      index: true,
     },
     images: {
       type: [
@@ -204,10 +199,9 @@ const productSchema = new Schema<IProductDocument>(
   },
 );
 
-// Indexes
+// Indexes (sku unique index is created by field definition)
 productSchema.index({ sellerId: 1 });
 productSchema.index({ slug: 1 });
-productSchema.index({ sku: 1 }, { unique: true });
 productSchema.index({ category: 1 });
 productSchema.index({ categoryId: 1 });
 productSchema.index({ brand: 1 });
