@@ -205,6 +205,37 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
     );
   }
 
+  // Guard: if order not loaded yet, show loading
+  if (!isHydrated || isLoading) {
+    return (
+      <div className="bg-[#F1F3F6] min-h-screen py-12">
+        <div className="max-w-[800px] mx-auto p-12 text-center text-sm text-[#878787]">
+          Loading order details...
+        </div>
+      </div>
+    );
+  }
+
+  // Guard: if order not found, show not found state (prevents crash when API returns 404)
+  if (!order) {
+    return (
+      <div className="bg-[#F1F3F6] min-h-screen py-12">
+        <div className="max-w-md mx-auto p-8 bg-white border border-[#E0E0E0] rounded-sm text-center shadow-xs">
+          <AlertTriangle size={40} className="text-red-500 mx-auto mb-3" />
+          <h2 className="text-lg font-bold text-[#212121]">Order Not Found</h2>
+          <p className="text-xs text-[#878787] mt-1 mb-6">
+            We could not find this order. Please check the order ID and try again.
+          </p>
+          <Link href="/orders">
+            <Button variant="primary" fullWidth className="font-semibold text-xs">
+              View All Orders
+            </Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   const currentStageIndex = STAGE_ORDER[order.orderStatus];
   const isCancelled = order.orderStatus === "CANCELLED";
   const isReturnedOrRefunded = order.orderStatus === "RETURNED" || order.orderStatus === "REFUNDED" || order.orderStatus === "RETURN_REQUESTED";
