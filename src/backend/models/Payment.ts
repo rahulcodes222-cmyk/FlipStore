@@ -16,26 +16,22 @@ const paymentSchema = new Schema<IPaymentDocument>(
       unique: true,
       trim: true,
       uppercase: true,
-      index: true,
     },
     orderId: {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
       type: Schema.Types.ObjectId as any,
       ref: 'Order',
       required: true,
-      index: true,
     },
     subOrderId: {
       type: String,
       trim: true,
-      index: true,
     },
     customerId: {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
       type: Schema.Types.ObjectId as any,
       ref: 'User',
       required: true,
-      index: true,
     },
     customerName: {
       type: String,
@@ -71,7 +67,6 @@ const paymentSchema = new Schema<IPaymentDocument>(
       type: String,
       enum: ['PENDING', 'PROCESSING', 'PAID', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED'],
       default: 'PENDING',
-      index: true,
     },
     gateway: {
       type: String,
@@ -81,12 +76,10 @@ const paymentSchema = new Schema<IPaymentDocument>(
     gatewayOrderId: {
       type: String,
       trim: true,
-      index: true,
     },
     gatewayPaymentId: {
       type: String,
       trim: true,
-      index: true,
     },
     gatewaySignature: {
       type: String,
@@ -95,7 +88,6 @@ const paymentSchema = new Schema<IPaymentDocument>(
     idempotencyKey: {
       type: String,
       trim: true,
-      index: true,
     },
     refundAmount: {
       type: Number,

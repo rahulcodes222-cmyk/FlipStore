@@ -47,7 +47,6 @@ const wishlistSchema = new Schema<IWishlistDocument>(
       ref: 'User',
       required: [true, 'User reference is required.'],
       unique: true,
-      index: true,
     },
     items: {
       type: [wishlistItemSchema],
@@ -62,8 +61,7 @@ const wishlistSchema = new Schema<IWishlistDocument>(
   },
 );
 
-// Indexes
-wishlistSchema.index({ userId: 1 }, { unique: true });
+// Indexes (userId unique index is created by field definition)
 wishlistSchema.index({ 'items.productId': 1 });
 
 const WishlistModel: Model<IWishlistDocument> =

@@ -14,7 +14,6 @@ const sellerStoreSchema = new Schema<ISellerStoreDocument>(
       ref: 'User',
       required: [true, 'Seller reference is required.'],
       unique: true,
-      index: true,
     },
     storeName: {
       type: String,
@@ -29,7 +28,6 @@ const sellerStoreSchema = new Schema<ISellerStoreDocument>(
       trim: true,
       lowercase: true,
       match: [/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Invalid slug format.'],
-      index: true,
     },
     storeDescription: { type: String, trim: true, maxlength: 1000 },
     storeLogo: { type: String, trim: true },
@@ -62,13 +60,11 @@ const sellerStoreSchema = new Schema<ISellerStoreDocument>(
       type: String,
       enum: ['PENDING', 'VERIFIED', 'REJECTED', 'SUSPENDED', 'Draft', 'Pending', 'Under Review', 'Approved', 'Rejected', 'Suspended'],
       default: 'PENDING',
-      index: true,
     },
     storeStatus: {
       type: String,
       enum: ['ACTIVE', 'INACTIVE', 'VACATION'],
       default: 'ACTIVE',
-      index: true,
     },
     rating: { type: Number, default: 0, min: 0, max: 5 },
   },
@@ -78,9 +74,7 @@ const sellerStoreSchema = new Schema<ISellerStoreDocument>(
   },
 );
 
-// Indexes
-sellerStoreSchema.index({ sellerId: 1 }, { unique: true });
-sellerStoreSchema.index({ storeSlug: 1 }, { unique: true });
+// Indexes (sellerId/storeSlug unique indexes are created by field definitions)
 sellerStoreSchema.index({ verificationStatus: 1 });
 sellerStoreSchema.index({ storeStatus: 1 });
 sellerStoreSchema.index({ rating: -1 });

@@ -59,14 +59,12 @@ const vendorSchema = new Schema<IVendorDocument>(
       ref: 'User',
       required: [true, 'User reference is required.'],
       unique: true,
-      index: true,
     },
     sellerId: {
       type: String,
       required: [true, 'Seller ID is required.'],
       trim: true,
       uppercase: true,
-      index: true,
     },
     storeName: {
       type: String,
@@ -97,13 +95,11 @@ const vendorSchema = new Schema<IVendorDocument>(
       type: String,
       enum: ['Draft', 'Pending', 'Under Review', 'Approved', 'Rejected', 'Suspended'],
       default: 'Draft',
-      index: true,
     },
     approvalStatus: {
       type: String,
       enum: ['PENDING', 'APPROVED', 'REJECTED', 'SUSPENDED'],
       default: 'PENDING',
-      index: true,
     },
     rejectionReason: { type: String, trim: true },
     suspensionReason: { type: String, trim: true },

@@ -13,7 +13,6 @@ const couponSchema = new Schema<ICouponDocument>(
     sellerId: {
       type: Schema.Types.ObjectId,
       ref: 'User',
-      index: true,
     },
     code: {
       type: String,
@@ -21,7 +20,6 @@ const couponSchema = new Schema<ICouponDocument>(
       unique: true,
       trim: true,
       uppercase: true,
-      index: true,
     },
     discountType: {
       type: String,
@@ -64,7 +62,6 @@ const couponSchema = new Schema<ICouponDocument>(
       type: String,
       enum: ['ACTIVE', 'EXPIRED', 'DISABLED', 'DRAFT'],
       default: 'ACTIVE',
-      index: true,
     },
   },
   {
@@ -75,8 +72,7 @@ const couponSchema = new Schema<ICouponDocument>(
   },
 );
 
-// Indexes
-couponSchema.index({ code: 1 }, { unique: true });
+// Indexes (code unique index is created by field definition)
 couponSchema.index({ sellerId: 1 });
 couponSchema.index({ status: 1 });
 couponSchema.index({ expiryDate: 1 });

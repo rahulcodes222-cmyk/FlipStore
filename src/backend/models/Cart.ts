@@ -67,7 +67,6 @@ const cartSchema = new Schema<ICartDocument>(
       ref: 'User',
       required: [true, 'User reference is required.'],
       unique: true,
-      index: true,
     },
     items: {
       type: [cartItemSchema],
@@ -82,8 +81,7 @@ const cartSchema = new Schema<ICartDocument>(
   },
 );
 
-// Indexes
-cartSchema.index({ userId: 1 }, { unique: true });
+// Indexes (userId unique index is created by field definition)
 cartSchema.index({ 'items.productId': 1 });
 
 const CartModel: Model<ICartDocument> =

@@ -264,6 +264,7 @@ export const addressesPOST = withDatabase(withAuth(async (authReq) => {
       { status: HTTP_STATUS.CREATED },
     );
   } catch (error: unknown) {
+    console.error('[addressesPOST] Failed to add address:', error);
     if (error instanceof Error && error.message === 'User not found.') {
       return NextResponse.json(
         createErrorResponse(error.message, {
@@ -273,11 +274,15 @@ export const addressesPOST = withDatabase(withAuth(async (authReq) => {
         { status: HTTP_STATUS.NOT_FOUND },
       );
     }
+    const msg = error instanceof Error ? error.message : 'Failed to add address.';
     return NextResponse.json(
-      createErrorResponse('Failed to add address.', {
-        statusCode: HTTP_STATUS.INTERNAL_SERVER_ERROR,
-        code: 'ADDRESS_ADD_FAILED',
-      }),
+      createErrorResponse(
+        process.env.NODE_ENV === 'production' ? 'Failed to add address.' : `Failed to add address: ${msg}`,
+        {
+          statusCode: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+          code: 'ADDRESS_ADD_FAILED',
+        },
+      ),
       { status: HTTP_STATUS.INTERNAL_SERVER_ERROR },
     );
   }

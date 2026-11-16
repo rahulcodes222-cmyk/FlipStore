@@ -57,7 +57,7 @@ const userSchema = new Schema<IUserDocument>(
         city: { type: String, required: true },
         state: { type: String, required: true },
         landmark: { type: String },
-        type: { type: String, enum: ['home', 'work'], default: 'home' },
+        type: { type: String, enum: ['home', 'work', 'business'], default: 'home' },
         isDefault: { type: Boolean, default: false },
       },
     ],
