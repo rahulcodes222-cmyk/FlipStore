@@ -1,29 +1,635 @@
 /**
- * authService — Frontend-only simulated authentication.
+ * authService — Frontend authentication service connected to backend APIs.
  *
- * ⚠️  This is NOT production-secure authentication.
- * No passwords are hashed or transmitted securely here.
- * This module is intentionally isolated so a real backend
- * (e.g. NextAuth, Supabase, Firebase) can replace it later
- * by swapping out only this file.
+ * Replaces the mock-only implementation with real API calls to:
+ *   POST /api/v1/auth/login
+ *   POST /api/v1/auth/register
+ *   POST /api/v1/auth/logout
+ *   POST /api/v1/auth/refresh
+ *   GET  /api/v1/auth/me
+ *   GET /api/v1/users/profile
+ *   PATCH /api/v1/users/profile
+ *   GET /api/v1/users/addresses
+ *   POST /api/v1/users/addresses
+ *   PATCH /api/v1/users/addresses/:id
+ *   DELETE /api/v1/users/addresses/:id
+ *   PATCH /api/v1/users/addresses/:id/default
+ *   POST /api/v1/auth/forgot-password
+ *   POST /api/v1/auth/reset-password
+ *   POST /api/v1/auth/change-password
+ *
+ * Tokens are stored in HTTP-only cookies by the backend; this service
+ * manages the user session in localStorage and the zustand store.
  */
 
-import { Address, User } from "@/types";
-import { MOCK_USERS } from "@/data";
+import { Address, User, CartItem } from "@/types";
+import { useAuthStore } from "@/store/useAuthStore";
 
-// ─── Storage keys ─────────────────────────────────────────────────────────────
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const AUTH_USER_KEY = "my_ecommerce_current_user_v1";
-const AUTH_REGISTERED_KEY = "my_ecommerce_registered_users_v1";
 
-// ─── Mock passwords for pre-seeded demo accounts ──────────────────────────────
-// In a real app these would NEVER exist client-side.
-const MOCK_PASSWORDS: Record<string, string> = {
-  "aarav.mehta@example.com": "Demo@1234",
-  "9876543210": "Demo@1234",
-  "admin@my-ecommerce.in": "Admin@1234",
-  "9999988888": "Admin@1234",
-};
+interface AuthTokens {
+  accessToken: string;
+  refreshToken: string;
+  accessTokenExpiresAt?: string;
+  refreshTokenExpiresAt?: string;
+}
 
+interface AuthPayload {
+  user: User;
+  tokens?: AuthTokens;
+}
+
+interface ApiSuccessResponse<T> {
+  success: boolean;
+  message?: string;
+  data?: T;
+}
+
+interface ApiErrorResponse {
+  success: false;
+  message: string;
+  error?: {
+    code: string;
+    details?: Record<string, string[]>;
+  };
+}
+
+/**
+ * Persist user session to localStorage and zustand store.
+ */
+function persistSession(user: User): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    useAuthStore.getState().setUser(user);
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Clear session from localStorage and zustand store.
+ */
+function clearSession(): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(AUTH_USER_KEY);
+    useAuthStore.getState().logout();
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Get the current session user from localStorage.
+ */
+export async function getCurrentUser(): Promise<User | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(AUTH_USER_KEY);
+    return raw ? (JSON.parse(raw) as User) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Login with email/mobile + password.
+ * Calls POST /api/v1/auth/login.
+ */
+export async function loginWithPassword(
+  identifier: string,
+  password: string,
+): Promise<{ user: User; token: string }> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include", // Send/receive HTTP-only cookies
+    body: JSON.stringify({ emailOrPhone: identifier, password }),
+  });
+
+  const body = (await res.json().catch(() => ({}))) as ApiSuccessResponse<AuthPayload> & ApiErrorResponse;
+  if (!res.ok || body?.success === false) {
+    throw new Error((body as ApiErrorResponse)?.message || "Login failed. Please try again.");
+  }
+
+  const payload = (body as ApiSuccessResponse<AuthPayload>).data;
+  if (!payload?.user) {
+    throw new Error("Login failed: invalid server response.");
+  }
+  persistSession(payload.user);
+  return { user: payload.user, token: payload.tokens?.accessToken || "" };
+}
+
+/**
+ * Register a new customer account.
+ * Calls POST /api/v1/auth/register.
+ */
+export async function register(input: {
+  name: string;
+  email: string;
+  phone: string;
+  password: string;
+}): Promise<{ user: User; token: string }> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(input),
+  });
+
+  const body = (await res.json().catch(() => ({}))) as ApiSuccessResponse<AuthPayload> & ApiErrorResponse;
+  if (!res.ok || body?.success === false) {
+    throw new Error((body as ApiErrorResponse)?.message || "Registration failed. Please try again.");
+  }
+
+  const auth = (body as ApiSuccessResponse<AuthPayload>).data;
+  if (!auth?.user) {
+    throw new Error("Registration failed: invalid server response.");
+  }
+  persistSession(auth.user);
+  return { user: auth.user, token: auth.tokens?.accessToken || "" };
+}
+
+/**
+ * Log out and clear session.
+ * Calls POST /api/v1/auth/logout.
+ */
+export async function logout(): Promise<void> {
+  try {
+    await fetch(`${API_BASE}/api/v1/auth/logout`, {
+      method: "POST",
+      credentials: "include",
+    });
+  } catch {
+    // Ignore network errors during logout
+  }
+  clearSession();
+}
+
+/**
+ * Refresh the access token using the refresh token cookie.
+ * Calls POST /api/v1/auth/refresh.
+ */
+export async function refreshAccessToken(): Promise<string | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    });
+
+    if (!res.ok) {
+      clearSession();
+      return null;
+    }
+
+    const data = await res.json();
+    return data.data?.accessToken || null;
+  } catch {
+    clearSession();
+    return null;
+  }
+}
+
+/**
+ * Get the current authenticated user profile.
+ * Calls GET /api/v1/users/profile (or GET /api/v1/auth/me as fallback).
+ */
+export async function fetchCurrentUser(): Promise<User | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/users/profile`, {
+      method: "GET",
+      credentials: "include",
+    });
+    const body = await res.json().catch(() => ({} as any));
+
+    if (res.ok && body?.success !== false && body?.data) {
+      const user: User = body.data as User;
+      persistSession(user);
+      return user;
+    }
+
+    if (res.status === 401 || res.status === 403) {
+      clearSession();
+      return null;
+    }
+
+    // Server/transient error: keep existing session
+    return null;
+  } catch {
+    // Network/transient error: keep existing session
+    return null;
+  }
+}
+
+/**
+ * Update profile information.
+ * Calls PATCH /api/v1/users/profile.
+ */
+export async function updateProfile(updates: Partial<User>): Promise<User> {
+  const res = await fetch(`${API_BASE}/api/v1/users/profile`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(updates),
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Profile update failed.");
+  }
+
+  const data = await res.json();
+  const user: User = data.data;
+  persistSession(user);
+  return user;
+}
+
+/**
+ * Get all saved addresses for the authenticated user.
+ * Calls GET /api/v1/users/addresses.
+ */
+export async function getAddresses(): Promise<Address[]> {
+  const res = await fetch(`${API_BASE}/api/v1/users/addresses`, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch addresses.");
+  }
+
+  const data = await res.json();
+  return data.data || [];
+}
+
+/**
+ * Add a new delivery address.
+ * Calls POST /api/v1/users/addresses.
+ */
+export async function addAddress(
+  addressData: Omit<Address, "id">,
+): Promise<Address> {
+  const res = await fetch(`${API_BASE}/api/v1/users/addresses`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(addressData),
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Failed to add address.");
+  }
+
+  const data = await res.json();
+  return data.data;
+}
+
+/**
+ * Edit an existing address.
+ * Calls PATCH /api/v1/users/addresses/:id.
+ */
+export async function editAddress(
+  addressId: string,
+  updates: Partial<Address>,
+): Promise<Address> {
+  const res = await fetch(`${API_BASE}/api/v1/users/addresses/${addressId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(updates),
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Failed to update address.");
+  }
+
+  const data = await res.json();
+  return data.data;
+}
+
+/**
+ * Delete an address.
+ * Calls DELETE /api/v1/users/addresses/:id.
+ */
+export async function deleteAddress(addressId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/users/addresses/${addressId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Failed to delete address.");
+  }
+}
+
+/**
+ * Set an address as the default address.
+ * Calls PATCH /api/v1/users/addresses/:id/default.
+ */
+export async function setDefaultAddress(addressId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/users/addresses/${addressId}/default`, {
+    method: "PATCH",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Failed to set default address.");
+  }
+}
+
+/**
+ * Get cart items for the authenticated user.
+ * Calls GET /api/v1/cart.
+ */
+export async function getCart(): Promise<CartItem[]> {
+  const res = await fetch(`${API_BASE}/api/v1/cart`, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch cart.");
+  }
+
+  const data = await res.json();
+  return data.data?.items || [];
+}
+
+/**
+ * Add product to cart.
+ * Calls POST /api/v1/cart/items.
+ */
+export async function addToCart(
+  productId: string,
+  quantity: number = 1,
+  variantId?: string,
+): Promise<CartItem[]> {
+  const res = await fetch(`${API_BASE}/api/v1/cart/items`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ productId, quantity, variantId }),
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Failed to add item to cart.");
+  }
+
+  const data = await res.json();
+  return data.data?.items || [];
+}
+
+/**
+ * Update cart item quantity.
+ * Calls PATCH /api/v1/cart/items/:id.
+ */
+export async function updateCartItem(
+  itemId: string,
+  quantity: number,
+): Promise<CartItem[]> {
+  const res = await fetch(`${API_BASE}/api/v1/cart/items/${itemId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ quantity }),
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Failed to update cart item.");
+  }
+
+  const data = await res.json();
+  return data.data?.items || [];
+}
+
+/**
+ * Delete an item from cart.
+ * Calls DELETE /api/v1/cart/items/:id.
+ */
+export async function deleteCartItem(itemId: string): Promise<CartItem[]> {
+  const res = await fetch(`${API_BASE}/api/v1/cart/items/${itemId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Failed to delete cart item.");
+  }
+
+  const data = await res.json();
+  return data.data?.items || [];
+}
+
+/**
+ * Clear all items from cart.
+ * Calls DELETE /api/v1/cart.
+ */
+export async function clearCart(): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/cart`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Failed to clear cart.");
+  }
+}
+
+/**
+ * Get wishlist items for the authenticated user.
+ * Calls GET /api/v1/wishlist.
+ */
+export async function getWishlist(): Promise<CartItem[]> {
+  const res = await fetch(`${API_BASE}/api/v1/wishlist`, {
+    method: "GET",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    throw new Error("Failed to fetch wishlist.");
+  }
+
+  const data = await res.json();
+  return data.data || [];
+}
+
+/**
+ * Add product to wishlist.
+ * Calls POST /api/v1/wishlist.
+ */
+export async function addToWishlist(productId: string): Promise<CartItem[]> {
+  const res = await fetch(`${API_BASE}/api/v1/wishlist`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ productId }),
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Failed to add item to wishlist.");
+  }
+
+  const data = await res.json();
+  return data.data || [];
+}
+
+/**
+ * Remove product from wishlist.
+ * Calls DELETE /api/v1/wishlist/:productId.
+ */
+export async function deleteWishlistItem(productId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/wishlist/${productId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Failed to remove from wishlist.");
+  }
+}
+
+/**
+ * Move item from wishlist to cart.
+ * Calls POST /api/v1/wishlist/move-to-cart.
+ */
+export async function moveWishlistItemToCart(productId: string): Promise<CartItem[]> {
+  const res = await fetch(`${API_BASE}/api/v1/wishlist/move-to-cart`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ productId }),
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Failed to move item to cart.");
+  }
+
+  const data = await res.json();
+  return data.data?.items || [];
+}
+
+/**
+ * Check if product is in wishlist.
+ * This checks locally against the wishlist items.
+ */
+export async function isInWishlist(productId: string): Promise<boolean> {
+  try {
+    const wishlist = await getWishlist();
+    return wishlist.some((item) => item.productId === productId);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Request a password reset.
+ * Calls POST /api/v1/auth/forgot-password.
+ */
+export async function sendPasswordReset(identifier: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/forgot-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ emailOrPhone: identifier }),
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Password reset request failed.");
+  }
+}
+
+/**
+ * Reset password using reset token.
+ * Calls POST /api/v1/auth/reset-password.
+ */
+export async function resetPassword(
+  identifier: string,
+  _otp: string,
+  newPassword: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      emailOrPhone: identifier,
+      newPassword,
+      confirmPassword: newPassword,
+    }),
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Password reset failed.");
+  }
+}
+
+/**
+ * Change password for authenticated user.
+ * Calls POST /api/v1/auth/change-password.
+ */
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/change-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+
+  if (!res.ok) {
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Password change failed.");
+  }
+}
+
+/**
+ * Legacy OTP-less login (kept for backward compatibility).
+ * @deprecated Use loginWithPassword instead.
+ */
+export async function login(identifier: string): Promise<User> {
+  // Create a temporary user for legacy compatibility
+  const cleanId = identifier.trim().toLowerCase();
+  const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanId);
+
+  const user: User = {
+    id: `usr-${Date.now()}`,
+    name: isEmail ? cleanId.split("@")[0] : "Guest Shopper",
+    email: isEmail ? cleanId : `${cleanId}@guest.flipstore.in`,
+    phone: cleanId.replace(/\D/g, "") || "9999900000",
+    role: cleanId.includes("admin") ? "admin" : "customer",
+    avatar:
+      "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&q=80",
+    addresses: [],
+    createdAt: new Date().toISOString(),
+  };
+
+  persistSession(user);
+  return user;
+}
+
+// ─── Export for backward compatibility ───
+
+/**
+ * Demo credentials for quick login buttons.
+ * These point to pre-seeded backend accounts.
+ */
 export const DEMO_CREDENTIALS = [
   {
     label: "Customer",
@@ -39,331 +645,37 @@ export const DEMO_CREDENTIALS = [
   },
 ];
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-export interface RegisterPayload {
-  name: string;
-  email: string;
-  phone: string;
-  password: string;
-}
-
-export interface AuthResult {
-  user: User;
-  token: string; // mock JWT placeholder
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-function getRegisteredUsers(): Array<User & { _password: string }> {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(AUTH_REGISTERED_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveRegisteredUsers(users: Array<User & { _password: string }>) {
-  try {
-    localStorage.setItem(AUTH_REGISTERED_KEY, JSON.stringify(users));
-  } catch {
-    // ignore
-  }
-}
-
-function persistSession(user: User) {
-  try {
-    localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-  } catch {
-    // ignore
-  }
-}
-
-function makeMockToken(user: User): string {
-  // Not a real JWT — just a base64 placeholder for future replacement
-  const payload = { sub: user.id, role: user.role, iat: Date.now() };
-  return "mock." + btoa(JSON.stringify(payload)) + ".sig";
-}
-
-function normalisePhone(phone: string): string {
-  return phone.replace(/\D/g, "").slice(-10);
-}
-
-function isEmail(val: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val);
-}
-
-// ─── Service ──────────────────────────────────────────────────────────────────
+/**
+ * Named export for backward compatibility with existing imports.
+ * Wraps all individual functions into a single authService object.
+ */
 export const authService = {
-  /**
-   * Get the current session user from localStorage (or null).
-   * Replace with a session cookie / JWT decode call when connecting a backend.
-   */
-  async getCurrentUser(): Promise<User | null> {
-    if (typeof window === "undefined") return null;
-    try {
-      const raw = localStorage.getItem(AUTH_USER_KEY);
-      return raw ? (JSON.parse(raw) as User) : null;
-    } catch {
-      return null;
-    }
-  },
-
-  /**
-   * Login with email/mobile + password.
-   * Replace the body of this function to call a real API endpoint.
-   */
-  async loginWithPassword(identifier: string, password: string): Promise<AuthResult> {
-    // Simulate network delay
-    await new Promise((r) => setTimeout(r, 600));
-
-    const cleanId = identifier.trim().toLowerCase();
-    const cleanPhone = normalisePhone(cleanId);
-
-    // 1. Check pre-seeded mock users
-    const foundUser: User | undefined = MOCK_USERS.find(
-      (u) =>
-        u.email.toLowerCase() === cleanId ||
-        normalisePhone(u.phone) === cleanPhone
-    );
-
-    if (foundUser) {
-      const expectedPwd =
-        MOCK_PASSWORDS[foundUser.email] ||
-        MOCK_PASSWORDS[normalisePhone(foundUser.phone)];
-      if (expectedPwd && password !== expectedPwd) {
-        throw new Error("Incorrect password. Try Demo@1234 for demo accounts.");
-      }
-      persistSession(foundUser);
-      return { user: foundUser, token: makeMockToken(foundUser) };
-    }
-
-    // 2. Check self-registered users
-    const registered = getRegisteredUsers();
-    const regUser = registered.find(
-      (u) =>
-        u.email.toLowerCase() === cleanId ||
-        normalisePhone(u.phone) === cleanPhone
-    );
-
-    if (regUser) {
-      if (regUser._password !== password) {
-        throw new Error("Incorrect password.");
-      }
-      const { _password: _pw, ...user } = regUser;
-      void _pw;
-      persistSession(user);
-      return { user, token: makeMockToken(user) };
-    }
-
-    throw new Error("No account found. Please register first.");
-  },
-
-  /**
-   * Legacy OTP-less login (kept for backward compatibility with existing pages).
-   * @deprecated Use loginWithPassword instead.
-   */
-  async login(identifier: string): Promise<User> {
-    await new Promise((r) => setTimeout(r, 400));
-    const cleanId = identifier.trim().toLowerCase();
-    const cleanPhone = normalisePhone(cleanId);
-
-    let foundUser = MOCK_USERS.find(
-      (u) =>
-        u.email.toLowerCase() === cleanId ||
-        normalisePhone(u.phone) === cleanPhone
-    );
-
-    if (!foundUser) {
-      foundUser = {
-        id: `usr-${Date.now()}`,
-        name: isEmail(cleanId) ? cleanId.split("@")[0] : "Guest Shopper",
-        email: isEmail(cleanId)
-          ? cleanId
-          : `${cleanPhone}@guest.flipstore.in`,
-        phone: cleanPhone || "9999900000",
-        role: cleanId.includes("admin") ? "admin" : "customer",
-        avatar:
-          "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&q=80",
-        addresses: [],
-        createdAt: new Date().toISOString(),
-      };
-    }
-
-    persistSession(foundUser);
-    return foundUser;
-  },
-
-  /**
-   * Register a new account.
-   * Replace the body to POST to /api/auth/register.
-   */
-  async register(payload: RegisterPayload): Promise<AuthResult> {
-    await new Promise((r) => setTimeout(r, 800));
-
-    const registered = getRegisteredUsers();
-
-    // Duplicate checks
-    if (
-      registered.some(
-        (u) => u.email.toLowerCase() === payload.email.toLowerCase()
-      )
-    ) {
-      throw new Error("An account with this email already exists.");
-    }
-    if (
-      registered.some(
-        (u) => normalisePhone(u.phone) === normalisePhone(payload.phone)
-      )
-    ) {
-      throw new Error("An account with this mobile number already exists.");
-    }
-    if (
-      MOCK_USERS.some(
-        (u) => u.email.toLowerCase() === payload.email.toLowerCase()
-      )
-    ) {
-      throw new Error(
-        "This email is already registered. Please log in instead."
-      );
-    }
-
-    const newUser: User = {
-      id: `usr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      name: payload.name,
-      email: payload.email,
-      phone: payload.phone,
-      role: "customer",
-      avatar:
-        "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=200&q=80",
-      addresses: [],
-      createdAt: new Date().toISOString(),
-    };
-
-    saveRegisteredUsers([...registered, { ...newUser, _password: payload.password }]);
-    persistSession(newUser);
-    return { user: newUser, token: makeMockToken(newUser) };
-  },
-
-  /**
-   * Send a password-reset OTP to the given email/mobile.
-   * Replace to call POST /api/auth/forgot-password.
-   */
-  async sendPasswordReset(identifier: string): Promise<void> {
-    await new Promise((r) => setTimeout(r, 700));
-
-    const cleanId = identifier.trim().toLowerCase();
-    const cleanPhone = normalisePhone(cleanId);
-
-    const inMock = MOCK_USERS.some(
-      (u) =>
-        u.email.toLowerCase() === cleanId ||
-        normalisePhone(u.phone) === cleanPhone
-    );
-    const inRegistered = getRegisteredUsers().some(
-      (u) =>
-        u.email.toLowerCase() === cleanId ||
-        normalisePhone(u.phone) === cleanPhone
-    );
-
-    if (!inMock && !inRegistered) {
-      throw new Error(
-        "No account found with this email or mobile number."
-      );
-    }
-    // In a real app: send OTP via SMS/email here
-  },
-
-  /**
-   * Reset password using the OTP token.
-   * Replace to call POST /api/auth/reset-password.
-   */
-  async resetPassword(
-    identifier: string,
-    _otp: string,
-    newPassword: string
-  ): Promise<void> {
-    await new Promise((r) => setTimeout(r, 600));
-
-    const cleanId = identifier.trim().toLowerCase();
-    const cleanPhone = normalisePhone(cleanId);
-
-    // Update registered users list
-    const registered = getRegisteredUsers();
-    const idx = registered.findIndex(
-      (u) =>
-        u.email.toLowerCase() === cleanId ||
-        normalisePhone(u.phone) === cleanPhone
-    );
-    if (idx !== -1) {
-      registered[idx]._password = newPassword;
-      saveRegisteredUsers(registered);
-    }
-    // For mock users: update MOCK_PASSWORDS in-memory (session only)
-    const mockUser = MOCK_USERS.find(
-      (u) =>
-        u.email.toLowerCase() === cleanId ||
-        normalisePhone(u.phone) === cleanPhone
-    );
-    if (mockUser) {
-      MOCK_PASSWORDS[mockUser.email] = newPassword;
-    }
-  },
-
-  /**
-   * Log out and clear the session.
-   * Replace to call POST /api/auth/logout or clear an HTTP-only cookie.
-   */
-  async logout(): Promise<void> {
-    if (typeof window === "undefined") return;
-    localStorage.removeItem(AUTH_USER_KEY);
-  },
-
-  /**
-   * Update profile information.
-   */
-  async updateProfile(updates: Partial<User>): Promise<User> {
-    const current = await this.getCurrentUser();
-    if (!current) throw new Error("No user is currently signed in");
-
-    const updated: User = { ...current, ...updates };
-    persistSession(updated);
-
-    // Also update registered users list if needed
-    const registered = getRegisteredUsers();
-    const idx = registered.findIndex((u) => u.id === current.id);
-    if (idx !== -1) {
-      registered[idx] = { ...registered[idx], ...updates };
-      saveRegisteredUsers(registered);
-    }
-
-    return updated;
-  },
-
-  /**
-   * Add a new delivery address.
-   */
-  async addAddress(addressData: Omit<Address, "id">): Promise<Address> {
-    const current = await this.getCurrentUser();
-    if (!current) throw new Error("No user is currently signed in");
-
-    const newAddress: Address = { ...addressData, id: `addr-${Date.now()}` };
-    let updatedAddresses = [...current.addresses];
-    if (newAddress.isDefault) {
-      updatedAddresses = updatedAddresses.map((a) => ({
-        ...a,
-        isDefault: false,
-      }));
-    }
-    updatedAddresses.push(newAddress);
-
-    await this.updateProfile({
-      addresses: updatedAddresses,
-      defaultAddressId: newAddress.isDefault
-        ? newAddress.id
-        : current.defaultAddressId,
-    });
-
-    return newAddress;
-  },
+  loginWithPassword,
+  register,
+  logout,
+  refreshAccessToken,
+  fetchCurrentUser,
+  sendPasswordReset,
+  resetPassword,
+  changePassword,
+  getCurrentUser,
+  updateProfile,
+  getAddresses,
+  addAddress,
+  editAddress,
+  deleteAddress,
+  setDefaultAddress,
+  login,
+  // Cart methods
+  getCart,
+  addToCart,
+  updateCartItem,
+  deleteCartItem,
+  clearCart,
+  // Wishlist methods
+  getWishlist,
+  addToWishlist,
+  deleteWishlistItem,
+  moveWishlistItemToCart,
+  isInWishlist,
 };

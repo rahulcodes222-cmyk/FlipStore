@@ -1,16 +1,25 @@
-import React from "react";
+import React, { Suspense } from "react";
 import type { Metadata } from "next";
 import { productService } from "@/services/productService";
+import { categoryService } from "@/services/categoryService";
 import { ProductDetailsView } from "@/components/product/ProductDetailsView";
+import { ProductListingClient } from "@/components/products";
 import { EmptyState } from "@/components/common/EmptyState";
+import { Skeleton } from "@/components/common/Skeleton";
 
 interface ProductDetailPageProps {
   params: Promise<{ slug: string }>;
 }
 
 export async function generateStaticParams() {
-  const { data } = await productService.getProducts({ limit: 100 });
-  return data.map((product) => ({ slug: product.slug }));
+  // Fallback slugs for build time when API is not available
+  return [
+    { slug: 'samsung-galaxy-s24-5g-256gb' },
+    { slug: 'electronics' },
+    { slug: 'fashion-apparel' },
+    { slug: 'home-kitchen' },
+    { slug: 'all-products' },
+  ];
 }
 
 export async function generateMetadata({
@@ -22,7 +31,7 @@ export async function generateMetadata({
 
   return {
     title: `${product.title} - Best Price Online | FlipStore`,
-    description: product.shortDescription || product.description.slice(0, 150),
+    description: product.shortDescription || product.description.slice(0, 160),
   };
 }
 

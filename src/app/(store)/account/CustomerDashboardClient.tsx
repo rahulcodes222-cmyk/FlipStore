@@ -77,6 +77,8 @@ export function CustomerDashboardClient() {
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoadingOrders, setIsLoadingOrders] = useState(false);
 
+  // Addresses State
+
   // ── Profile Edit State ──────────────────────────────────────────────────────
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileName, setProfileName] = useState(() => user?.name || "");
@@ -151,6 +153,26 @@ export function CustomerDashboardClient() {
     };
   }, []);
 
+  // Load addresses once on mount
+  useEffect(() => {
+    let isCancelled = false;
+    async function loadAddresses() {
+      try {
+        const data = await authService.getAddresses();
+        if (!isCancelled) {
+          setAddresses(data);
+        }
+      } catch (err) {
+        console.error(err);
+        toast({ type: "error", message: "Failed to load saved addresses" });
+      }
+    }
+    loadAddresses();
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
   const handleStartEditProfile = () => {
     setProfileName(user?.name || "");
     setProfileEmail(user?.email || "");
@@ -185,8 +207,8 @@ export function CustomerDashboardClient() {
         title: "Profile Updated",
         message: "Your personal details have been saved successfully.",
       });
-    } catch {
-      toast({ type: "error", message: "Failed to update profile. Please try again." });
+    } catch (err: unknown) {
+      toast({ type: "error", message: (err as Error).message || "Failed to update profile. Please try again." });
     } finally {
       setIsSavingProfile(false);
     }
@@ -242,45 +264,43 @@ export function CustomerDashboardClient() {
 
     const fullStreet = `${addrHouseNo.trim()}, ${addrStreet.trim()}`;
 
-    if (editingAddressId) {
-      const updated = addresses.map((a) =>
-        a.id === editingAddressId
-          ? {
-              ...a,
-              name: addrName.trim(),
-              phone: addrPhone.trim(),
-              street: fullStreet,
-              locality: addrStreet.trim(),
-              city: addrCity.trim(),
-              state: addrState,
-              pincode: addrPincode.trim(),
-              type: addrType,
-            }
-          : a
-      );
-      setAddresses(updated);
-      updateUser({ addresses: updated });
-      toast({ type: "success", message: "Address updated successfully" });
-    } else {
-      const created: Address = {
-        id: `addr-${Date.now()}`,
-        name: addrName.trim(),
-        phone: addrPhone.trim(),
-        street: fullStreet,
-        locality: addrStreet.trim(),
-        city: addrCity.trim(),
-        state: addrState,
-        pincode: addrPincode.trim(),
-        type: addrType,
-        isDefault: addresses.length === 0,
-      };
-      const updated = [created, ...addresses];
-      setAddresses(updated);
-      updateUser({ addresses: updated });
-      toast({ type: "success", message: "New address added to your address book" });
-    }
+    const addressPayload = {
+      name: addrName.trim(),
+      phone: addrPhone.trim(),
+      pincode: addrPincode.trim(),
+      locality: addrStreet.trim(),
+      street: fullStreet,
+      city: addrCity.trim(),
+      state: addrState,
+      type: addrType,
+      isDefault: addresses.length === 0 && !editingAddressId,
+    };
 
-    setIsAddressModalOpen(false);
+    if (editingAddressId) {
+      try {
+        await authService.editAddress(editingAddressId, addressPayload);
+        toast({ type: "success", message: "Address updated successfully" });
+        setIsAddressModalOpen(false);
+        // Refresh addresses from backend
+        const updated = await authService.getAddresses();
+        setAddresses(updated);
+        updateUser({ addresses: updated });
+      } catch {
+        toast({ type: "error", message: "Failed to update address. Please try again." });
+      }
+    } else {
+      try {
+        const created = await authService.addAddress(addressPayload);
+        toast({ type: "success", message: "New address added to your address book" });
+        setIsAddressModalOpen(false);
+        // Refresh addresses from backend
+        const updated = await authService.getAddresses();
+        setAddresses(updated);
+        updateUser({ addresses: updated });
+      } catch {
+        toast({ type: "error", message: "Failed to add address. Please try again." });
+      }
+    }
   };
 
   const handleDeleteAddress = (id: string) => {
@@ -289,21 +309,31 @@ export function CustomerDashboardClient() {
       return;
     }
     if (window.confirm("Are you sure you want to delete this address?")) {
-      const updated = addresses.filter((a) => a.id !== id);
-      setAddresses(updated);
-      updateUser({ addresses: updated });
-      toast({ type: "info", message: "Address removed from saved list" });
+      try {
+        authService.deleteAddress(id);
+        const updated = addresses.filter((a) => a.id !== id);
+        setAddresses(updated);
+        updateUser({ addresses: updated });
+        toast({ type: "info", message: "Address removed from saved list" });
+      } catch {
+        toast({ type: "error", message: "Failed to delete address. Please try again." });
+      }
     }
   };
 
   const handleSetDefaultAddress = (id: string) => {
-    const updated = addresses.map((a) => ({
-      ...a,
-      isDefault: a.id === id,
-    }));
-    setAddresses(updated);
-    updateUser({ addresses: updated, defaultAddressId: id });
-    toast({ type: "success", message: "Default delivery address updated" });
+    try {
+      authService.setDefaultAddress(id);
+      const updated = addresses.map((a) => ({
+        ...a,
+        isDefault: a.id === id,
+      }));
+      setAddresses(updated);
+      updateUser({ addresses: updated, defaultAddressId: id });
+      toast({ type: "success", message: "Default delivery address updated" });
+    } catch {
+      toast({ type: "error", message: "Failed to set default address. Please try again." });
+    }
   };
 
   // ── Settings Actions ────────────────────────────────────────────────────────

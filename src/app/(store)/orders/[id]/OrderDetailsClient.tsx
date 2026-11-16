@@ -61,14 +61,19 @@ const TIMELINE_STAGES: {
   },
 ];
 
-const STAGE_ORDER: Record<OrderStatus, number> = {
+const STAGE_ORDER: Record<string, number> = {
+  PENDING: 0,
   PLACED: 0,
   CONFIRMED: 1,
   PROCESSING: 2,
+  PACKED: 2,
   SHIPPED: 3,
   OUT_FOR_DELIVERY: 4,
   DELIVERED: 5,
   CANCELLED: -1,
+  RETURN_REQUESTED: 5,
+  RETURNED: 5,
+  REFUNDED: 5,
 };
 
 export function OrderDetailsClient({ orderId }: { orderId: string }) {
@@ -115,8 +120,9 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
         title: "Tracking Updated",
         message: `Order status advanced to "${targetStatus}".`,
       });
-    } catch {
-      toast({ type: "error", message: "Failed to update tracking simulation" });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to update tracking simulation";
+      toast({ type: "error", message: msg });
     }
   };
 
@@ -135,7 +141,7 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
     if (!order) return;
     setIsCancelling(true);
     try {
-      const cancelled = await orderService.cancelOrder(order.id);
+      const cancelled = await orderService.cancelOrder(order.id, cancelReason);
       setOrder(cancelled);
       setIsCancelModalOpen(false);
       toast({
@@ -151,12 +157,23 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
     }
   };
 
-  const handleDownloadInvoice = () => {
-    toast({
-      type: "success",
-      title: "Invoice Downloaded",
-      message: `Tax Invoice for #${order?.orderNumber} saved (FlipStore Retail Pvt Ltd).`,
-    });
+  const handleDownloadInvoice = async () => {
+    if (!order) return;
+    try {
+      const inv = await orderService.getInvoice(order.orderNumber || order.id);
+      const blob = new Blob([JSON.stringify(inv, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${inv?.invoiceNumber || `INV-${order.orderNumber}`}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ type: "success", title: "Invoice Downloaded", message: `Invoice ${inv?.invoiceNumber || order.orderNumber} downloaded.` });
+    } catch {
+      toast({ type: "error", message: "Failed to download invoice." });
+    }
   };
 
   if (!isHydrated || isLoading) {
@@ -190,10 +207,13 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
 
   const currentStageIndex = STAGE_ORDER[order.orderStatus];
   const isCancelled = order.orderStatus === "CANCELLED";
+  const isReturnedOrRefunded = order.orderStatus === "RETURNED" || order.orderStatus === "REFUNDED" || order.orderStatus === "RETURN_REQUESTED";
   const isEligibleForCancel =
+    order.orderStatus === "PENDING" ||
     order.orderStatus === "PLACED" ||
     order.orderStatus === "CONFIRMED" ||
-    order.orderStatus === "PROCESSING";
+    order.orderStatus === "PROCESSING" ||
+    order.orderStatus === "PACKED";
 
   return (
     <div className="bg-[#F1F3F6] min-h-screen py-6">
@@ -289,15 +309,18 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
             </div>
           </div>
 
-          {/* Cancelled Banner */}
-          {isCancelled ? (
-            <div className="p-4 bg-red-50 border border-red-200 rounded-xs flex items-start gap-3">
-              <XCircle size={22} className="text-red-500 shrink-0 mt-0.5" />
+          {/* Cancelled/Return Banner */}
+          {isCancelled || isReturnedOrRefunded ? (
+            <div className={cn("p-4 border rounded-xs flex items-start gap-3", isCancelled ? "bg-red-50 border-red-200" : "bg-amber-50 border-amber-200")}>
+              <XCircle size={22} className={cn("shrink-0 mt-0.5", isCancelled ? "text-red-500" : "text-amber-600")} />
               <div>
-                <h3 className="font-bold text-sm text-red-700">Order Cancelled</h3>
-                <p className="text-xs text-red-600 mt-0.5 leading-relaxed">
-                  This order was cancelled as requested. Any amount deducted will be refunded to
-                  your original payment method ({order.paymentMethod}) within 3–5 business days.
+                <h3 className={cn("font-bold text-sm", isCancelled ? "text-red-700" : "text-amber-700")}>
+                  {isCancelled ? "Order Cancelled" : order.orderStatus.replace(/_/g, " ")}
+                </h3>
+                <p className={cn("text-xs mt-0.5 leading-relaxed", isCancelled ? "text-red-600" : "text-amber-700")}>
+                  {isCancelled
+                    ? `This order was cancelled as requested. Any amount deducted will be refunded to your original payment method (${order.paymentMethod}) within 3–5 business days.`
+                    : `Current status: ${order.orderStatus.replace(/_/g, " ")}. Refund/request updates are reflected in order status.`}
                 </p>
               </div>
             </div>

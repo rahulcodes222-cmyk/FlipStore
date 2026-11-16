@@ -26,48 +26,29 @@ import { cn } from "@/lib/utils";
 export function getStatusBadge(status: OrderStatus) {
   switch (status) {
     case "DELIVERED":
-      return {
-        label: "Delivered",
-        color: "bg-[#E8F5E9] text-[#388E3C] border-green-200",
-        icon: <CheckCircle2 size={13} className="text-[#388E3C]" />,
-      };
+      return { label: "Delivered", color: "bg-[#E8F5E9] text-[#388E3C] border-green-200", icon: <CheckCircle2 size={13} className="text-[#388E3C]" /> };
     case "CANCELLED":
-      return {
-        label: "Cancelled",
-        color: "bg-red-50 text-red-600 border-red-200",
-        icon: <XCircle size={13} className="text-red-500" />,
-      };
+      return { label: "Cancelled", color: "bg-red-50 text-red-600 border-red-200", icon: <XCircle size={13} className="text-red-500" /> };
     case "OUT_FOR_DELIVERY":
-      return {
-        label: "Out for Delivery",
-        color: "bg-amber-50 text-amber-700 border-amber-200",
-        icon: <Truck size={13} className="text-amber-600" />,
-      };
+      return { label: "Out for Delivery", color: "bg-amber-50 text-amber-700 border-amber-200", icon: <Truck size={13} className="text-amber-600" /> };
     case "SHIPPED":
-      return {
-        label: "Shipped",
-        color: "bg-blue-50 text-[#2874F0] border-blue-200",
-        icon: <Truck size={13} className="text-[#2874F0]" />,
-      };
+      return { label: "Shipped", color: "bg-blue-50 text-[#2874F0] border-blue-200", icon: <Truck size={13} className="text-[#2874F0]" /> };
+    case "PACKED":
+      return { label: "Packed", color: "bg-purple-50 text-purple-700 border-purple-200", icon: <Package size={13} className="text-purple-600" /> };
     case "PROCESSING":
-      return {
-        label: "Processing",
-        color: "bg-purple-50 text-purple-700 border-purple-200",
-        icon: <Clock size={13} className="text-purple-600" />,
-      };
+      return { label: "Processing", color: "bg-purple-50 text-purple-700 border-purple-200", icon: <Clock size={13} className="text-purple-600" /> };
     case "CONFIRMED":
-      return {
-        label: "Confirmed",
-        color: "bg-blue-50 text-[#2874F0] border-blue-200",
-        icon: <CheckCircle2 size={13} className="text-[#2874F0]" />,
-      };
+      return { label: "Confirmed", color: "bg-blue-50 text-[#2874F0] border-blue-200", icon: <CheckCircle2 size={13} className="text-[#2874F0]" /> };
+    case "RETURN_REQUESTED":
+      return { label: "Return Requested", color: "bg-orange-50 text-orange-700 border-orange-200", icon: <Clock size={13} className="text-orange-600" /> };
+    case "RETURNED":
+      return { label: "Returned", color: "bg-gray-100 text-gray-700 border-gray-200", icon: <Package size={13} className="text-gray-600" /> };
+    case "REFUNDED":
+      return { label: "Refunded", color: "bg-green-50 text-green-700 border-green-200", icon: <CheckCircle2 size={13} className="text-green-600" /> };
+    case "PENDING":
     case "PLACED":
     default:
-      return {
-        label: "Order Placed",
-        color: "bg-gray-100 text-gray-700 border-gray-200",
-        icon: <Clock size={13} className="text-gray-600" />,
-      };
+      return { label: status === "PENDING" ? "Pending" : "Order Placed", color: "bg-gray-100 text-gray-700 border-gray-200", icon: <Clock size={13} className="text-gray-600" /> };
   }
 }
 
@@ -236,6 +217,7 @@ export default function OrdersHistoryPage() {
               {[
                 { label: "All Orders", value: "ALL" },
                 { label: "Confirmed", value: "CONFIRMED" },
+                { label: "Packed", value: "PACKED" },
                 { label: "Shipped", value: "SHIPPED" },
                 { label: "Delivered", value: "DELIVERED" },
                 { label: "Cancelled", value: "CANCELLED" },
@@ -285,9 +267,11 @@ export default function OrdersHistoryPage() {
             {filteredOrders.map((order) => {
               const badge = getStatusBadge(order.orderStatus);
               const isEligibleForCancel =
+                order.orderStatus === "PENDING" ||
                 order.orderStatus === "PLACED" ||
                 order.orderStatus === "CONFIRMED" ||
-                order.orderStatus === "PROCESSING";
+                order.orderStatus === "PROCESSING" ||
+                order.orderStatus === "PACKED";
 
               return (
                 <div

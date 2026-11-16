@@ -1,6 +1,5 @@
 import React from "react";
 import type { Metadata } from "next";
-import { orderService } from "@/services/orderService";
 import { OrderDetailsClient } from "./OrderDetailsClient";
 
 interface OrderPageProps {
@@ -8,8 +7,7 @@ interface OrderPageProps {
 }
 
 export async function generateStaticParams() {
-  const orders = await orderService.getOrders();
-  return orders.flatMap((o) => [{ id: o.id }, { id: o.orderNumber }]);
+  return [{ id: "placeholder" }];
 }
 
 export async function generateMetadata({ params }: OrderPageProps): Promise<Metadata> {

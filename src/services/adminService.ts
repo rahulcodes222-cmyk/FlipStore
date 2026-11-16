@@ -24,6 +24,8 @@ import {
   MOCK_REVIEWS,
 } from "@/data";
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
 // ─── Storage Keys ─────────────────────────────────────────────────────────────
 const STORAGE_KEYS = {
   PRODUCTS: "flipstore_admin_products_v1",
@@ -83,115 +85,179 @@ function writeStorage<T>(key: string, data: T) {
 
 // ─── Admin Service Implementation ─────────────────────────────────────────────
 export const adminService = {
-  // ── Products ────────────────────────────────────────────────────────────────
+  // ── Products (DB-backed via API) ────────────────────────────────────────────
   async getProducts(params?: {
     query?: string;
     category?: string;
     inStockOnly?: boolean;
   }): Promise<Product[]> {
-    const products = readStorage<Product[]>(STORAGE_KEYS.PRODUCTS, MOCK_PRODUCTS);
-    let filtered = [...products];
-
-    if (params?.category && params.category !== "ALL") {
-      filtered = filtered.filter(
-        (p) =>
-          p.categorySlug.toLowerCase() === params.category?.toLowerCase() ||
-          p.categoryId.toLowerCase() === params.category?.toLowerCase()
-      );
+    const sp = new URLSearchParams();
+    sp.set("limit", "100");
+    if (params?.query?.trim()) sp.set("search", params.query.trim());
+    if (params?.category && params.category !== "ALL") sp.set("category", params.category);
+    if (params?.inStockOnly) sp.set("stock", "IN_STOCK");
+    const res = await fetch(`${API_BASE}/api/v1/products?${sp.toString()}`, {
+      method: "GET",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || "Failed to fetch products.");
     }
-
-    if (params?.inStockOnly) {
-      filtered = filtered.filter((p) => p.inStock && p.stock > 0);
-    }
-
-    if (params?.query && params.query.trim()) {
-      const q = params.query.toLowerCase().trim();
-      filtered = filtered.filter(
-        (p) =>
-          p.title.toLowerCase().includes(q) ||
-          p.brandName.toLowerCase().includes(q) ||
-          p.id.toLowerCase().includes(q)
-      );
-    }
-
-    return filtered;
+    return ((body?.data || []) as any[]).map(mapApiProductToFrontend);
   },
 
   async getProductById(id: string): Promise<Product | null> {
-    const products = await this.getProducts();
-    return products.find((p) => p.id === id || p.slug === id) || null;
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/products/${id}`, {
+        method: "GET",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+      });
+      const body = await res.json().catch(() => ({} as any));
+      if (res.ok && body?.success !== false && body?.data) {
+        return mapApiProductToFrontend(body.data);
+      }
+      if (res.status !== 404 && res.ok === false && body?.success === false) {
+        // try fallback below for transient/compat cases
+      }
+    } catch {}
+    try {
+      const list = await this.getProducts({ query: id });
+      return list.find((p) => p.id === id || p.slug === id) || null;
+    } catch {
+      return null;
+    }
   },
 
   async createProduct(productData: Omit<Product, "id" | "createdAt">): Promise<Product> {
-    const products = readStorage<Product[]>(STORAGE_KEYS.PRODUCTS, MOCK_PRODUCTS);
-    const slug = productData.slug || productData.title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    const newProduct: Product = {
-      ...productData,
-      id: `prod-${Date.now()}`,
-      slug,
-      createdAt: new Date().toISOString(),
-    };
-
-    const updated = [newProduct, ...products];
-    writeStorage(STORAGE_KEYS.PRODUCTS, updated);
-    return newProduct;
+    const payload = toApiCreateProductPayload(productData as any);
+    const res = await fetch(`${API_BASE}/api/v1/products`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      const details = body?.error?.details;
+      const first = details ? Object.values(details).flat().find(Boolean) : null;
+      throw new Error(first ? String(first) : body?.message || "Failed to create product.");
+    }
+    const created = body?.data;
+    if (created?.id) {
+      try {
+        const full = await this.getProductById(created.id);
+        if (full) return full;
+      } catch {}
+      return mapApiProductToFrontend({ ...payload, ...created, title: payload.name, name: payload.name });
+    }
+    return mapApiProductToFrontend(created || payload);
   },
 
   async updateProduct(id: string, updates: Partial<Product>): Promise<Product> {
-    const products = readStorage<Product[]>(STORAGE_KEYS.PRODUCTS, MOCK_PRODUCTS);
-    const index = products.findIndex((p) => p.id === id);
-    if (index === -1) throw new Error("Product not found");
-
-    products[index] = { ...products[index], ...updates };
-    writeStorage(STORAGE_KEYS.PRODUCTS, products);
-    return products[index];
+    const payload = toApiUpdateProductPayload(updates as any);
+    const res = await fetch(`${API_BASE}/api/v1/products/${id}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      const details = body?.error?.details;
+      const first = details ? Object.values(details).flat().find(Boolean) : null;
+      throw new Error(first ? String(first) : body?.message || "Failed to update product.");
+    }
+    try {
+      const full = await this.getProductById(id);
+      if (full) return full;
+    } catch {}
+    return mapApiProductToFrontend({ id, ...updates, ...body?.data });
   },
 
   async deleteProduct(id: string): Promise<void> {
-    const products = readStorage<Product[]>(STORAGE_KEYS.PRODUCTS, MOCK_PRODUCTS);
-    const updated = products.filter((p) => p.id !== id);
-    writeStorage(STORAGE_KEYS.PRODUCTS, updated);
+    const res = await fetch(`${API_BASE}/api/v1/products/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || "Failed to delete product.");
+    }
   },
 
   async updateProductStock(id: string, newStock: number): Promise<Product> {
-    return this.updateProduct(id, {
-      stock: newStock,
-      inStock: newStock > 0,
-    });
+    return this.updateProduct(id, { stock: newStock, inStock: newStock > 0 } as any);
   },
 
-  // ── Categories ──────────────────────────────────────────────────────────────
+  // ── Categories (DB-backed via API) ─────────────────────────────────────────
   async getCategories(): Promise<Category[]> {
-    return readStorage<Category[]>(STORAGE_KEYS.CATEGORIES, MOCK_CATEGORIES);
+    const res = await fetch(`${API_BASE}/api/v1/categories?limit=100`, {
+      method: "GET",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || "Failed to fetch categories.");
+    }
+    return (body?.data || []) as Category[];
   },
 
   async createCategory(categoryData: Omit<Category, "id">): Promise<Category> {
-    const categories = await this.getCategories();
-    const slug = categoryData.slug || categoryData.name.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    const newCategory: Category = {
-      ...categoryData,
-      id: `cat-${Date.now()}`,
-      slug,
-    };
-    const updated = [...categories, newCategory];
-    writeStorage(STORAGE_KEYS.CATEGORIES, updated);
-    return newCategory;
+    const res = await fetch(`${API_BASE}/api/v1/categories`, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: categoryData.name,
+        slug: categoryData.slug,
+        description: categoryData.description || "",
+        image: categoryData.image || "",
+        icon: (categoryData as any).icon || "",
+        itemCount: categoryData.itemCount ?? 0,
+        isFeatured: categoryData.isFeatured ?? false,
+        isActive: (categoryData as any).isActive ?? true,
+      }),
+    });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      const details = body?.error?.details;
+      const first = details ? Object.values(details).flat().find(Boolean) : null;
+      throw new Error(first ? String(first) : body?.message || "Failed to create category.");
+    }
+    return body.data as Category;
   },
 
   async updateCategory(id: string, updates: Partial<Category>): Promise<Category> {
-    const categories = await this.getCategories();
-    const index = categories.findIndex((c) => c.id === id);
-    if (index === -1) throw new Error("Category not found");
-
-    categories[index] = { ...categories[index], ...updates };
-    writeStorage(STORAGE_KEYS.CATEGORIES, categories);
-    return categories[index];
+    const res = await fetch(`${API_BASE}/api/v1/categories/${id}`, {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      const details = body?.error?.details;
+      const first = details ? Object.values(details).flat().find(Boolean) : null;
+      throw new Error(first ? String(first) : body?.message || "Failed to update category.");
+    }
+    return body.data as Category;
   },
 
   async deleteCategory(id: string): Promise<void> {
-    const categories = await this.getCategories();
-    const updated = categories.filter((c) => c.id !== id);
-    writeStorage(STORAGE_KEYS.CATEGORIES, updated);
+    const res = await fetch(`${API_BASE}/api/v1/categories/${id}`, {
+      method: "DELETE",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+    });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || "Failed to delete category.");
+    }
   },
 
   // ── Orders ──────────────────────────────────────────────────────────────────
@@ -334,3 +400,163 @@ export const adminService = {
     };
   },
 };
+
+
+
+function slugify(v: string): string {
+  return String(v || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+function mapApiProductToFrontend(item: any): Product {
+  const imagesArr = Array.isArray(item?.images)
+    ? item.images.map((img: any) => (typeof img === "string" ? img : img?.url)).filter(Boolean)
+    : [];
+  const primary = Array.isArray(item?.images)
+    ? item.images.find((img: any) => img && typeof img === "object" && img.isPrimary) || item.images[0]
+    : null;
+  const thumbnail = item?.thumbnail || (typeof primary === "string" ? primary : primary?.url) || imagesArr[0] || "";
+  const categorySlug = item?.categorySlug || slugify(item?.categoryName || item?.category || "general");
+  return {
+    id: String(item?.id || item?._id || ""),
+    title: String(item?.title || item?.name || ""),
+    slug: String(item?.slug || slugify(item?.title || item?.name || "")),
+    brandId: String(item?.brandId || slugify(item?.brandName || item?.brand || "brand") || "brand"),
+    brandName: String(item?.brandName || item?.brand || ""),
+    categoryId: String(item?.categoryId || slugify(item?.categoryName || item?.category || "category")),
+    categoryName: String(item?.categoryName || item?.category || ""),
+    categorySlug,
+    price: Number(item?.price || 0),
+    mrp: Number(item?.mrp || item?.price || 0),
+    discountPercentage: Number(item?.discountPercentage || 0),
+    inStock: item?.inStock ?? Number(item?.stock || 0) > 0,
+    stock: Number(item?.stock || 0),
+    rating: Number(item?.rating || 0),
+    ratingCount: Number(item?.ratingCount || item?.reviewCount || 0),
+    reviewCount: Number(item?.reviewCount || item?.ratingCount || 0),
+    isAssured: !!item?.isAssured,
+    isFreeDelivery: !!item?.isFreeDelivery,
+    estimatedDeliveryDays: Number(item?.estimatedDeliveryDays || 3),
+    seller: item?.seller || { id: String(item?.sellerId || "admin"), name: "Store", rating: 4.5 },
+    thumbnail,
+    images: imagesArr.length ? imagesArr : (thumbnail ? [thumbnail] : []),
+    shortDescription: String(item?.shortDescription || ""),
+    description: String(item?.description || ""),
+    highlights: Array.isArray(item?.highlights) ? item.highlights : [],
+    specifications: (item?.specifications as any) || {},
+    tags: Array.isArray(item?.tags) ? item.tags : [],
+    createdAt: String(item?.createdAt || new Date().toISOString()),
+  } as Product;
+}
+
+function normalizeSpecifications(input: any): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return out;
+  for (const [k, v] of Object.entries(input)) {
+    if (v == null) continue;
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
+      out[String(k)] = String(v);
+    } else if (typeof v === 'object' && !Array.isArray(v)) {
+      // flatten nested group like { General: { Brand: "X" } }
+      let added = false;
+      for (const [nk, nv] of Object.entries(v as Record<string, any>)) {
+        if (nv == null) continue;
+        if (typeof nv === 'object' && !Array.isArray(nv)) {
+          out[`${String(k)} - ${String(nk)}`] = JSON.stringify(nv);
+        } else {
+          out[String(nk)] = String(nv);
+        }
+        added = true;
+      }
+      if (!added) out[String(k)] = JSON.stringify(v);
+    } else {
+      out[String(k)] = Array.isArray(v) ? v.join(', ') : JSON.stringify(v);
+    }
+  }
+  return out;
+}
+
+function toApiCreateProductPayload(productData: any): any {
+  const name = String(productData?.title || productData?.name || "").trim();
+  const slug = slugify(productData?.slug || name) || `product-${Date.now()}`;
+  const categoryName = String(productData?.categoryName || productData?.category || "General").trim() || "General";
+  const brandName = String(productData?.brandName || productData?.brand || "Store").trim() || "Store";
+  const imageUrl = String(productData?.thumbnail || (Array.isArray(productData?.images) ? (typeof productData.images[0] === 'string' ? productData.images[0] : productData.images[0]?.url) : "") || "https://images.unsplash.com/photo-1526738549149-8e07eca6c147?w=600&q=80");
+  const desc = String(productData?.description || `${name} by ${brandName}.`).trim();
+  const highlights = Array.isArray(productData?.highlights) ? productData.highlights.filter(Boolean) : [];
+  const rawSpecs = (productData?.specifications && typeof productData.specifications === 'object') ? productData.specifications : { Brand: brandName, Model: name };
+  const specs = normalizeSpecifications(rawSpecs);
+  const mrp = Number(productData?.mrp ?? productData?.originalPrice ?? productData?.price ?? 0) || 0;
+  const price = Number(productData?.price ?? 0) || 0;
+  const payload: any = {
+    name,
+    slug,
+    sku: `ADM-${Date.now().toString(36).toUpperCase()}`,
+    category: categoryName,
+    brand: brandName,
+    description: desc.length >= 10 ? desc : `${desc} Premium quality product.`,
+    shortDescription: String(productData?.shortDescription || `${name} by ${brandName}`).slice(0, 300),
+    highlights,
+    specifications: specs,
+    price,
+    mrp: mrp || price,
+    discountPercentage: Number(productData?.discountPercentage ?? (mrp > price && mrp > 0 ? Math.round(((mrp - price) / mrp) * 100) : 0)) || 0,
+    taxPercentage: Number(productData?.taxPercentage ?? 0) || 0,
+    stock: Number.isFinite(Number(productData?.stock)) ? Math.max(0, Math.floor(Number(productData.stock))) : 0,
+    lowStockThreshold: Number(productData?.lowStockThreshold ?? 5) || 5,
+    status: productData?.status || ((Number(productData?.stock || 0) > 0) ? "PUBLISHED" : "OUT_OF_STOCK"),
+    images: [{ id: `img-${Date.now()}`, url: imageUrl, alt: name || "Product image", isPrimary: true }],
+    variants: [],
+    seoTitle: String(productData?.seoTitle || name).slice(0, 200),
+    seoDescription: String(productData?.seoDescription || desc).slice(0, 500),
+    isAssured: !!productData?.isAssured,
+    isFreeDelivery: !!productData?.isFreeDelivery,
+    estimatedDeliveryDays: Number(productData?.estimatedDeliveryDays ?? 3) || 3,
+  };
+  const catId = String(productData?.categoryId || '').trim();
+  if (/^[a-f\d]{24}$/i.test(catId)) payload.categoryId = catId;
+  const brId = String(productData?.brandId || '').trim();
+  if (/^[a-f\d]{24}$/i.test(brId)) payload.brandId = brId;
+  return payload;
+}
+
+function toApiUpdateProductPayload(updates: any): any {
+  const out: any = {};
+  if (updates?.title !== undefined || updates?.name !== undefined) out.name = String(updates.title ?? updates.name).trim();
+  if (updates?.slug !== undefined) out.slug = slugify(updates.slug);
+  if (updates?.categoryName !== undefined || updates?.category !== undefined) out.category = String(updates.categoryName ?? updates.category);
+  if (updates?.categoryId !== undefined) {
+    const v = String(updates.categoryId || '').trim();
+    if (/^[a-f\d]{24}$/i.test(v)) out.categoryId = v;
+  }
+  if (updates?.brandName !== undefined || updates?.brand !== undefined) out.brand = String(updates.brandName ?? updates.brand);
+  if (updates?.brandId !== undefined) {
+    const v = String(updates.brandId || '').trim();
+    if (/^[a-f\d]{24}$/i.test(v)) out.brandId = v;
+  }
+  if (updates?.description !== undefined) {
+    const d = String(updates.description || "");
+    out.description = d.length >= 10 ? d : `${d} Premium quality product.`;
+  }
+  if (updates?.shortDescription !== undefined) out.shortDescription = String(updates.shortDescription).slice(0,300);
+  if (updates?.highlights !== undefined) out.highlights = Array.isArray(updates.highlights) ? updates.highlights : [];
+  if (updates?.specifications !== undefined) out.specifications = normalizeSpecifications(updates.specifications || {});
+  if (updates?.price !== undefined) out.price = Number(updates.price) || 0;
+  if (updates?.mrp !== undefined || updates?.originalPrice !== undefined) out.mrp = Number(updates.mrp ?? updates.originalPrice) || 0;
+  if (updates?.discountPercentage !== undefined) out.discountPercentage = Number(updates.discountPercentage) || 0;
+  if (updates?.stock !== undefined) {
+    out.stock = Math.max(0, Math.floor(Number(updates.stock) || 0));
+    out.status = out.stock > 0 ? "PUBLISHED" : "OUT_OF_STOCK";
+  }
+  if (updates?.isAssured !== undefined) out.isAssured = !!updates.isAssured;
+  if (updates?.isFreeDelivery !== undefined) out.isFreeDelivery = !!updates.isFreeDelivery;
+  if (updates?.thumbnail !== undefined || updates?.images !== undefined) {
+    const url = updates.thumbnail || (Array.isArray(updates.images) ? (typeof updates.images[0] === 'string' ? updates.images[0] : updates.images[0]?.url) : null);
+    if (url) out.images = [{ id: `img-${Date.now()}`, url: String(url), alt: String(updates.title || updates.name || 'Product'), isPrimary: true }];
+  }
+  if (updates?.status !== undefined) out.status = updates.status;
+  return out;
+}

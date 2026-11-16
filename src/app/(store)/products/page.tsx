@@ -2,6 +2,7 @@ import React, { Suspense } from "react";
 import type { Metadata } from "next";
 import { productService } from "@/services/productService";
 import { categoryService } from "@/services/categoryService";
+import type { ProductFilterParams } from "@/types";
 import { ProductListingClient } from "@/components/products";
 import { Skeleton } from "@/components/common/Skeleton";
 
@@ -30,9 +31,26 @@ function ProductsLoadingSkeleton() {
   );
 }
 
-export default async function ProductsPage() {
+interface ProductsPageProps {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}
+
+export default async function ProductsPage({ searchParams }: ProductsPageProps) {
+  const sp = (await searchParams) as Record<string, string>;
+  const filters: ProductFilterParams = {};
+  if (sp.search) filters.search = sp.search;
+  if (sp.category) filters.category = sp.category;
+  if (sp.brand) filters.brand = sp.brand;
+  if (sp.minPrice) filters.minPrice = Number(sp.minPrice);
+  if (sp.maxPrice) filters.maxPrice = Number(sp.maxPrice);
+  if (sp.minRating !== undefined) filters.minRating = Number(sp.minRating);
+  if (sp.inStock !== undefined) filters.inStock = sp.inStock === 'true';
+  if (sp.sortBy) filters.sortBy = sp.sortBy as ProductFilterParams['sortBy'];
+  if (sp.page) filters.page = Number(sp.page);
+  if (sp.limit) filters.limit = Number(sp.limit);
+
   const [{ data: products }, categories] = await Promise.all([
-    productService.getProducts({ limit: 100 }),
+    productService.getProducts(filters),
     categoryService.getCategories(),
   ]);
 

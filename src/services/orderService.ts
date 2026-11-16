@@ -1,128 +1,254 @@
-import { Address, Coupon, Order, OrderItem, OrderPricing, OrderStatus, PaymentMethod } from "@/types";
-import { MOCK_ORDERS } from "@/data";
+/**
+ * Order Service (Frontend)
+ * Encapsulates checkout and order operations.
+ * Connects to backend APIs under /api/v1/checkout and /api/v1/orders.
+ */
 
-const ORDERS_STORAGE_KEY = "my_ecommerce_orders_v1";
+import { Order, PaymentMethod } from "@/types";
 
-export interface CreateOrderPayload {
-  userId: string;
-  items: OrderItem[];
-  shippingAddress: Address;
-  paymentMethod: PaymentMethod;
-  pricing: OrderPricing;
-  appliedCoupon?: Coupon;
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
+export interface CheckoutSummaryResponse {
+  items: Array<{
+    productId: string;
+    variantId?: string;
+    productName?: string;
+    thumbnail?: string;
+    price: number;
+    mrp?: number;
+    quantity: number;
+    sellerId?: string;
+    selectedVariants?: Record<string, string>;
+  }>;
+  summary: {
+    totalMrp: number;
+    discount: number;
+    subtotal?: number;
+    couponDiscount: number;
+    deliveryCharges: number;
+    taxAmount?: number;
+    totalAmount: number;
+    totalQuantity?: number;
+  };
+}
+
+export interface CreateOrderResponse {
+  id: string;
+  orderNumber: string;
+  status?: string;
+  paymentStatus?: string;
+  pricing: {
+    totalMrp: number;
+    discount: number;
+    couponDiscount: number;
+    deliveryCharges: number;
+    totalAmount: number;
+  };
+  placedAt: string;
+}
+
+function toIsoString(value: unknown): string {
+  if (!value) return new Date().toISOString();
+  if (typeof value === "string") return value;
+  if (value instanceof Date) return value.toISOString();
+  const d = new Date(value as string | number);
+  return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
 }
 
 export const orderService = {
-  /**
-   * Get all orders for the current user session
-   */
+  async getCheckoutSummary(payload: {
+    shippingAddressId: string;
+    paymentMethod: PaymentMethod;
+    items: Array<{
+      productId: string;
+      variantId?: string;
+      quantity: number;
+    }>;
+  }): Promise<CheckoutSummaryResponse> {
+    const res = await fetch(`${API_BASE}/api/v1/checkout/summary`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        cartItems: payload.items.map((i) => ({
+          productId: i.productId,
+          variantId: i.variantId,
+          quantity: i.quantity,
+        })),
+        shippingAddressId: payload.shippingAddressId,
+        paymentMethod: payload.paymentMethod,
+      }),
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      throw new Error(json?.message || json?.error?.message || "Failed to calculate checkout summary.");
+    }
+    return json.data as CheckoutSummaryResponse;
+  },
+
+  async createOrder(payload: {
+    shippingAddressId: string;
+    paymentMethod: PaymentMethod;
+    couponCode?: string;
+  }): Promise<CreateOrderResponse> {
+    const res = await fetch(`${API_BASE}/api/v1/orders`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload),
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      throw new Error(json?.message || json?.error?.message || "Failed to create order.");
+    }
+    return json.data as CreateOrderResponse;
+  },
+
+  async getOrderById(orderId: string): Promise<Order | null> {
+    const res = await fetch(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}`, {
+      method: "GET",
+      credentials: "include",
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (res.status === 404) return null;
+    if (!res.ok || json?.success === false) {
+      throw new Error(json?.message || json?.error?.message || "Failed to fetch order.");
+    }
+
+    const data = (json.data || json) as Record<string, any>;
+    return {
+      id: data.id || data._id || orderId,
+      orderNumber: data.orderNumber || orderId,
+      userId: data.userId || data.customerId || "",
+      items: (data.items || []) as Order["items"],
+      shippingAddress: data.shippingAddress as Order["shippingAddress"],
+      paymentMethod: data.paymentMethod as Order["paymentMethod"],
+      paymentStatus: (data.paymentStatus || "PENDING") as Order["paymentStatus"],
+      orderStatus: (data.orderStatus || "PLACED") as Order["orderStatus"],
+      pricing: data.pricing as Order["pricing"],
+      placedAt: toIsoString(data.placedAt),
+      estimatedDelivery: toIsoString(data.estimatedDelivery || Date.now() + 3 * 24 * 60 * 60 * 1000),
+      deliveredAt: data.deliveredAt ? toIsoString(data.deliveredAt) : undefined,
+      cancelledAt: data.cancelledAt ? toIsoString(data.cancelledAt) : undefined,
+      cancelReason: data.cancelReason,
+      appliedCouponId: data.appliedCouponId,
+      statusHistory: data.statusHistory || [],
+      shipments: data.shipments || [],
+      tracking: data.tracking,
+      returns: data.returns || [],
+      invoice: data.invoice,
+    } as unknown as Order;
+  },
+
   async getOrders(): Promise<Order[]> {
-    if (typeof window === "undefined") return MOCK_ORDERS;
-    try {
-      const data = localStorage.getItem(ORDERS_STORAGE_KEY);
-      if (!data) {
-        // Seed with initial mock orders
-        localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(MOCK_ORDERS));
-        return MOCK_ORDERS;
-      }
-      return JSON.parse(data);
-    } catch (e) {
-      console.error("Failed to read orders from localStorage", e);
-      return MOCK_ORDERS;
+    const res = await fetch(`${API_BASE}/api/v1/orders/my-orders`, {
+      method: "GET",
+      credentials: "include",
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      return [];
     }
+    const list = (json.data || []) as Record<string, any>[];
+    return list.map((data) => ({
+      id: data.id || data._id || "",
+      orderNumber: data.orderNumber || data.subOrderNumber || "",
+      userId: data.userId || data.customerId || "",
+      items: (data.items || []) as Order["items"],
+      shippingAddress: data.shippingAddress as Order["shippingAddress"],
+      paymentMethod: data.paymentMethod as Order["paymentMethod"],
+      paymentStatus: (data.paymentStatus || "PENDING") as Order["paymentStatus"],
+      orderStatus: (data.orderStatus || "PLACED") as Order["orderStatus"],
+      pricing: data.pricing as Order["pricing"],
+      placedAt: toIsoString(data.placedAt),
+      estimatedDelivery: toIsoString(data.estimatedDelivery || Date.now() + 3 * 24 * 60 * 60 * 1000),
+      deliveredAt: data.deliveredAt ? toIsoString(data.deliveredAt) : undefined,
+      cancelledAt: data.cancelledAt ? toIsoString(data.cancelledAt) : undefined,
+      cancelReason: data.cancelReason,
+      appliedCouponId: data.appliedCouponId,
+      statusHistory: data.statusHistory || [],
+      shipments: data.shipments || [],
+      tracking: data.tracking,
+      returns: data.returns || [],
+      invoice: data.invoice,
+    })) as Order[];
   },
 
-  /**
-   * Get an order by its unique ID
-   */
-  async getOrderById(id: string): Promise<Order | null> {
-    const orders = await this.getOrders();
-    const order = orders.find((o) => o.id === id || o.orderNumber === id);
-    return order || null;
+  async getOrderTracking(orderId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}/tracking`, {
+      method: "GET",
+      credentials: "include",
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      throw new Error(json?.message || json?.error?.message || "Failed to fetch tracking.");
+    }
+    return json.data;
   },
 
-  /**
-   * Create a new order (Flipkart style OD order generation)
-   */
-  async createOrder(payload: CreateOrderPayload): Promise<Order> {
-    const orders = await this.getOrders();
-
-    const randomSuffix = Math.floor(100000000000 + Math.random() * 900000000000);
-    const orderNumber = `OD${randomSuffix}`;
-
-    const deliveryDate = new Date();
-    deliveryDate.setDate(deliveryDate.getDate() + 2);
-
-    const newOrder: Order = {
-      id: `ord-${Date.now()}`,
-      orderNumber,
-      userId: payload.userId,
-      items: payload.items,
-      shippingAddress: payload.shippingAddress,
-      paymentMethod: payload.paymentMethod,
-      paymentStatus: payload.paymentMethod === "COD" ? "PENDING" : "PAID",
-      orderStatus: "CONFIRMED",
-      pricing: payload.pricing,
-      appliedCoupon: payload.appliedCoupon,
-      placedAt: new Date().toISOString(),
-      estimatedDelivery: deliveryDate.toISOString(),
-    };
-
-    orders.unshift(newOrder);
-
-    if (typeof window !== "undefined") {
-      localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
+  async getInvoice(orderId: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}/invoice`, {
+      method: "GET",
+      credentials: "include",
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      throw new Error(json?.message || json?.error?.message || "Failed to fetch invoice.");
     }
-
-    return newOrder;
+    return json.data;
   },
 
-  /**
-   * Cancel an order if it is eligible (PLACED, CONFIRMED, or PROCESSING)
-   */
-  async cancelOrder(orderId: string): Promise<Order> {
-    const orders = await this.getOrders();
-    const index = orders.findIndex((o) => o.id === orderId || o.orderNumber === orderId);
-
-    if (index === -1) {
-      throw new Error("Order not found");
+  async createReturn(payload: { orderId: string; productId: string; quantity?: number; reason: string; type?: 'RETURN' | 'REPLACEMENT'; notes?: string; subOrderId?: string }): Promise<any> {
+    const res = await fetch(`${API_BASE}/api/v1/returns`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      throw new Error(json?.message || json?.error?.message || "Failed to create return request.");
     }
-
-    const currentStatus = orders[index].orderStatus;
-    if (currentStatus === "SHIPPED" || currentStatus === "OUT_FOR_DELIVERY" || currentStatus === "DELIVERED") {
-      throw new Error("Item has already been shipped and cannot be cancelled directly. You can request a return after delivery.");
-    }
-
-    orders[index].orderStatus = "CANCELLED";
-
-    if (typeof window !== "undefined") {
-      localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
-    }
-
-    return orders[index];
+    return json.data;
   },
 
-  /**
-   * Update tracking status (for simulation)
-   */
-  async updateOrderStatus(orderId: string, status: OrderStatus): Promise<Order> {
-    const orders = await this.getOrders();
-    const index = orders.findIndex((o) => o.id === orderId || o.orderNumber === orderId);
+  async getMyReturns(): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/api/v1/returns/my-returns`, { method: "GET", credentials: "include" });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) return [];
+    return (json.data || []) as any[];
+  },
 
-    if (index === -1) {
-      throw new Error("Order not found");
+  async cancelOrder(orderId: string, reason?: string): Promise<Order> {
+    const res = await fetch(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}/cancel`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(reason ? { reason } : {}),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      throw new Error(json?.message || json?.error?.message || "Failed to cancel order.");
     }
+    const data = json.data || json;
+    return (await this.getOrderById(data.orderNumber || data.id || orderId)) as Order;
+  },
 
-    orders[index].orderStatus = status;
-    if (status === "DELIVERED") {
-      orders[index].deliveredAt = new Date().toISOString();
-      orders[index].paymentStatus = "PAID";
+  async updateOrderStatus(orderId: string, status: string): Promise<Order> {
+    const res = await fetch(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ status }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      throw new Error(json?.message || json?.error?.message || "Failed to update order status.");
     }
-
-    if (typeof window !== "undefined") {
-      localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
-    }
-
-    return orders[index];
+    const data = json.data || json;
+    return (await this.getOrderById(data.orderNumber || data.id || orderId)) as Order;
   },
 };
