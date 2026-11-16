@@ -88,7 +88,7 @@ function CartItemCard({
         <Link href={`/products/${product.slug}`} className="shrink-0">
           <div className="relative w-24 h-24 sm:w-28 sm:h-28 bg-[#F9F9F9] border border-gray-100 rounded-xs overflow-hidden">
             <Image
-              src={product.thumbnail || product.images[0]}
+              src={product.thumbnail || product.images[0] || "/placeholder-product.svg"}
               alt={product.title}
               fill
               sizes="112px"
@@ -243,7 +243,7 @@ function SavedItemCard({ item, onMoveToCart, onRemoveSaved }: SavedItemCardProps
       <Link href={`/products/${product.slug}`} className="shrink-0">
         <div className="relative w-16 h-16 bg-[#F9F9F9] border border-gray-100 rounded-xs overflow-hidden">
           <Image
-            src={product.thumbnail || product.images[0]}
+            src={product.thumbnail || product.images[0] || "/placeholder-product.svg"}
             alt={product.title}
             fill
             sizes="64px"
@@ -352,7 +352,7 @@ export default function CartPage() {
   );
 
   const handleApplyCoupon = async (codeToApply?: string) => {
-    const code = (codeToApply || couponCode).trim();
+    const code = (codeToApply || couponCode).trim().toUpperCase();
     if (!code) return;
     setIsApplyingCoupon(true);
     setCouponResult(null);
@@ -363,6 +363,7 @@ export default function CartPage() {
         setAppliedCoupon(res.coupon);
         setCouponDiscount(res.discountAmount);
         setCouponCode(res.coupon.code);
+        try { localStorage.setItem("checkout_coupon_code_v1", res.coupon.code); } catch {}
       }
     } catch {
       setCouponResult({ valid: false, message: "Failed to validate coupon. Please try again." });
@@ -376,13 +377,20 @@ export default function CartPage() {
     setCouponDiscount(0);
     setCouponResult(null);
     setCouponCode("");
+    try { localStorage.removeItem("checkout_coupon_code_v1"); } catch {}
   };
 
   const handleProceedToCheckout = () => {
     if (!isAuthenticated) {
       router.push("/login");
     } else {
-      router.push("/checkout");
+      const code = (appliedCoupon?.code || couponCode || "").trim().toUpperCase();
+      if (code) {
+        try { localStorage.setItem("checkout_coupon_code_v1", code); } catch {}
+        router.push(`/checkout?coupon=${encodeURIComponent(code)}`);
+      } else {
+        router.push("/checkout");
+      }
     }
   };
 

@@ -87,7 +87,7 @@ export function HeroSlider({
               {/* Background Backdrop Image with Overlay */}
               <div className="absolute inset-0">
                 <Image
-                  src={banner.imageUrl}
+                  src={banner.imageUrl || "/placeholder-product.svg"}
                   alt={banner.title}
                   fill
                   priority={index === 0}

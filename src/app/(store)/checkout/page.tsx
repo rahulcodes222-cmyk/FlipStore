@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -99,6 +99,37 @@ interface CheckoutSummary {
   };
 }
 
+
+
+function isTempAddressId(id?: string) {
+  if (!id) return true;
+  return !/^[a-f\d]{24}$/i.test(String(id));
+}
+
+async function ensurePersistedAddress(addr: Address): Promise<Address> {
+  if (!isTempAddressId(addr.id)) return addr;
+  try {
+    const mod = await import('@/services/authService');
+    const created = await mod.authService.addAddress({
+      name: addr.name,
+      phone: addr.phone,
+      pincode: addr.pincode,
+      locality: addr.locality || '',
+      street: addr.street,
+      city: addr.city,
+      state: addr.state,
+      landmark: addr.landmark,
+      alternatePhone: (addr as any).alternatePhone,
+      type: (addr.type as any) || 'home',
+      isDefault: !!addr.isDefault,
+    } as any);
+    if (created?.id) return { ...addr, ...created, id: String((created as any).id || (created as any)._id) } as Address;
+  } catch {
+    // fallback: proceed with original temp/default address; backend can resolve/create it during checkout/order.
+  }
+  return addr;
+}
+
 const buildDefaultAddresses = (user?: { name?: string; phone?: string; addresses?: Address[] } | null): Address[] => {
   if (user?.addresses && user.addresses.length > 0) return user.addresses;
   return [
@@ -162,6 +193,43 @@ export default function CheckoutPage() {
   const [paymentError, setPaymentError] = useState<string | null>(null);
   const [confirmedOrder, setConfirmedOrder] = useState<Order | null>(null);
 
+  const [couponCode, setCouponCode] = useState(() => {
+    if (typeof window === "undefined") return "";
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const fromUrl = (params.get("coupon") || "").trim().toUpperCase();
+      const saved = (localStorage.getItem("checkout_coupon_code_v1") || "").trim().toUpperCase();
+      return fromUrl || saved || "";
+    } catch { return ""; }
+  });
+  const [appliedCouponCode, setAppliedCouponCode] = useState(() => {
+    if (typeof window === "undefined") return "";
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const fromUrl = (params.get("coupon") || "").trim().toUpperCase();
+      const saved = (localStorage.getItem("checkout_coupon_code_v1") || "").trim().toUpperCase();
+      return fromUrl || saved || "";
+    } catch { return ""; }
+  });
+  const [couponApplying, setCouponApplying] = useState(false);
+  const [couponMessage, setCouponMessage] = useState<string | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const autoAppliedCouponRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const fromUrl = (params.get("coupon") || "").trim().toUpperCase();
+      const saved = (localStorage.getItem("checkout_coupon_code_v1") || "").trim().toUpperCase();
+      const code = fromUrl || saved;
+      if (code) {
+        setCouponCode((prev) => prev || code);
+        setAppliedCouponCode((prev) => prev || code);
+        try { localStorage.setItem("checkout_coupon_code_v1", code); } catch {}
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     if (user) {
       setAddresses((prev) => (prev.length ? prev : buildDefaultAddresses(user)));
@@ -207,20 +275,68 @@ export default function CheckoutPage() {
       setSummaryLoading(true);
       setSummaryError(null);
       try {
+        let addr = selectedAddress;
+        if (isTempAddressId(addr.id)) {
+          const persisted = await ensurePersistedAddress(addr);
+          if (!cancelled && persisted.id !== addr.id) {
+            setAddresses((prev) => prev.map((a, i) => (i === selectedAddressIndex ? { ...a, ...persisted } : a)));
+            addr = persisted;
+          } else {
+            addr = persisted;
+          }
+        }
         const summaryData = await orderService.getCheckoutSummary({
-          shippingAddressId: selectedAddress.id,
+          shippingAddressId: addr.id,
           paymentMethod,
+          couponCode: appliedCouponCode || undefined,
           items: items.map((i) => ({
             productId: i.product.id,
             variantId: i.selectedVariants?.variantId,
             quantity: i.quantity,
           })),
         });
-        if (!cancelled) setSummary(summaryData);
+        if (!cancelled) {
+          setSummary(summaryData);
+          if (appliedCouponCode) {
+            const disc = Number((summaryData as any)?.summary?.couponDiscount || 0);
+            if (disc > 0) {
+              setCouponError(null);
+              setCouponMessage(`Coupon "${appliedCouponCode}" applied. You saved ₹${disc.toLocaleString("en-IN")}.`);
+            } else {
+              // keep coupon (cart carry-over) visible for retry; show plain totals
+              setAppliedCouponCode("");
+              setCouponMessage(null);
+              setCouponError("Coupon could not be applied to this order. Please check conditions and try Apply again.");
+            }
+          }
+        }
       } catch (err) {
         if (!cancelled) {
-          setSummary(null);
-          setSummaryError(err instanceof Error ? err.message : "Failed to fetch checkout summary.");
+          const msg = err instanceof Error ? err.message : "Failed to fetch checkout summary.";
+          if (appliedCouponCode) {
+            // preserve cart-applied coupon code for retry; show error and fallback to plain summary (no storage wipe)
+            setAppliedCouponCode("");
+            setCouponError(msg);
+            setCouponMessage(null);
+            try {
+              let addr = selectedAddress;
+              if (isTempAddressId(addr.id)) {
+                const persisted = await ensurePersistedAddress(addr);
+                addr = persisted?.id ? persisted : addr;
+              }
+              const plain = await orderService.getCheckoutSummary({
+                shippingAddressId: addr.id,
+                paymentMethod,
+                items: items.map((i) => ({ productId: i.product.id, variantId: i.selectedVariants?.variantId, quantity: i.quantity })),
+              });
+              if (!cancelled) { setSummary(plain); setSummaryError(null); }
+            } catch {
+              if (!cancelled) { setSummary(null); setSummaryError(msg); }
+            }
+          } else {
+            setSummary(null);
+            setSummaryError(msg);
+          }
         }
       } finally {
         if (!cancelled) setSummaryLoading(false);
@@ -228,7 +344,7 @@ export default function CheckoutPage() {
     };
     loadSummary();
     return () => { cancelled = true; };
-  }, [isAuthenticated, user, selectedAddress?.id, paymentMethod, items, currentStep]);
+  }, [isAuthenticated, user, selectedAddress?.id, paymentMethod, items, currentStep, appliedCouponCode]);
 
   if (!isHydrated) {
     return <div className="max-w-[1100px] mx-auto p-12 text-center text-sm text-[#878787]">Preparing your checkout session...</div>;
@@ -340,6 +456,70 @@ export default function CheckoutPage() {
     }
   };
 
+  const handleApplyCoupon = async () => {
+    const code = couponCode.trim().toUpperCase();
+    if (!code) {
+      setCouponError("Enter a coupon code.");
+      setCouponMessage(null);
+      return;
+    }
+    if (!selectedAddress) return;
+    setCouponApplying(true);
+    setCouponError(null);
+    setCouponMessage(null);
+    try {
+      let addr = selectedAddress;
+      if (isTempAddressId(addr.id)) {
+        const persisted = await ensurePersistedAddress(addr);
+        if (persisted.id !== addr.id) {
+          setAddresses((prev) => prev.map((a, i) => (i === selectedAddressIndex ? { ...a, ...persisted } : a)));
+        }
+        addr = persisted;
+      }
+      const validated = await orderService.validateCoupon({
+        couponCode: code,
+        shippingAddressId: addr.id,
+        items: items.map((i) => ({ productId: i.product.id, variantId: i.selectedVariants?.variantId, quantity: i.quantity })),
+      });
+      const discount = Number((validated as any)?.summary?.couponDiscount || 0);
+      if (discount <= 0) throw new Error("This coupon is not applicable for the current cart.");
+      setCouponCode(code);
+      setAppliedCouponCode(code);
+      try { localStorage.setItem("checkout_coupon_code_v1", code); } catch {}
+      setSummary(validated);
+      setCouponMessage(`Coupon "${code}" applied. You saved ₹${discount.toLocaleString("en-IN")}.`);
+      setCouponError(null);
+      toast({ type: "success", message: `Coupon ${code} applied` });
+    } catch (err) {
+      setAppliedCouponCode("");
+      try { localStorage.removeItem("checkout_coupon_code_v1"); } catch {}
+      setCouponError(err instanceof Error ? err.message : "Invalid coupon code.");
+      setCouponMessage(null);
+    } finally {
+      setCouponApplying(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCouponCode("");
+    setCouponError(null);
+    setCouponMessage("Coupon removed.");
+    autoAppliedCouponRef.current = true; // prevent auto reapply after manual remove
+    try { localStorage.removeItem("checkout_coupon_code_v1"); } catch {}
+  };
+
+  // Auto-apply coupon carried from cart (once) when checkout is ready
+  useEffect(() => {
+    if (autoAppliedCouponRef.current) return;
+    if (currentStep === 5) return;
+    if (!isHydrated || !isAuthenticated || !user || !selectedAddress || items.length === 0) return;
+    const pending = (localStorage.getItem("checkout_coupon_code_v1") || couponCode || "").trim().toUpperCase();
+    if (!pending) return;
+    autoAppliedCouponRef.current = true;
+    if (!appliedCouponCode) setAppliedCouponCode(pending);
+    if (!couponCode) setCouponCode(pending);
+  }, [isHydrated, isAuthenticated, user, selectedAddress?.id, items.length, currentStep, couponCode, appliedCouponCode]);
+
   const handlePlaceOrder = async () => {
     if (!selectedAddress) return;
     setPaymentError(null);
@@ -363,10 +543,26 @@ export default function CheckoutPage() {
     const idempotencyKey = `checkout:${user.id}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
 
     try {
+      // Ensure temp/default address is saved so backend can resolve a valid address record.
+      let checkoutAddress = selectedAddress;
+      if (isTempAddressId(checkoutAddress.id)) {
+        const persisted = await ensurePersistedAddress(checkoutAddress);
+        if (persisted.id !== checkoutAddress.id) {
+          setAddresses((prev) => prev.map((a, i) => (i === selectedAddressIndex ? { ...a, ...persisted } : a)));
+        }
+        checkoutAddress = persisted;
+      }
+
       // Server creates order with server-calculated pricing/status (online starts PENDING).
       const created = await orderService.createOrder({
-        shippingAddressId: selectedAddress.id,
+        shippingAddressId: checkoutAddress.id,
         paymentMethod,
+        ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
+        cartItems: items.map((i) => ({
+          productId: i.product.id,
+          variantId: i.selectedVariants?.variantId,
+          quantity: i.quantity,
+        })),
       });
       const orderId = created.id;
 
@@ -465,7 +661,12 @@ export default function CheckoutPage() {
       setCurrentStep(5);
       toast({ type: "success", title: "Payment verified", message: `Order ID: ${created.orderNumber}` });
     } catch (err) {
-      setPaymentError(err instanceof Error ? err.message : "Payment/order failed. Please try again.");
+      const msg = err instanceof Error ? err.message : "Payment/order failed. Please try again.";
+      if (/authentication required|unauthor|session expired|token/i.test(msg)) {
+        setPaymentError("Session expired. Please log out and log in again, then retry COD.");
+      } else {
+        setPaymentError(msg);
+      }
     } finally {
       setIsProcessingPayment(false);
     }
@@ -680,7 +881,18 @@ export default function CheckoutPage() {
                   {paymentMethod === "COD" && (
                     <div className="border border-[#E0E0E0] rounded-sm p-3 space-y-3 bg-[#FAFAFA]">
                       <p className="text-xs text-[#555]">Enter the security code to confirm Cash on Delivery.</p>
-                      <div className="flex items-center gap-3"><div className="px-3 py-2 bg-white border border-gray-300 rounded-xs font-mono font-bold tracking-widest text-[#212121] select-none">{expectedCaptcha}</div><InputField label="Security Code" value={codCaptcha} onChange={(e) => setCodCaptcha(e.target.value)} /></div>
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <div className="px-3 py-2 bg-white border border-gray-300 rounded-xs font-mono font-bold tracking-widest text-[#212121] select-none">{expectedCaptcha}</div>
+                        <div className="min-w-[160px] flex-1"><InputField label="Security Code" value={codCaptcha} onChange={(e) => setCodCaptcha(e.target.value)} /></div>
+                        <button
+                          type="button"
+                          onClick={() => { setCodCaptcha(expectedCaptcha); setSimulateFailure(false); setPaymentError(null); }}
+                          className="h-10 px-3 text-xs font-semibold border border-[#388E3C] text-[#388E3C] bg-white rounded-xs hover:bg-green-50 cursor-pointer"
+                        >
+                          Use code &amp; confirm COD
+                        </button>
+                      </div>
+                      <p className="text-[11px] text-[#388E3C]">Click to auto-fill code for successful COD, then place order.</p>
                     </div>
                   )}
 
@@ -697,9 +909,28 @@ export default function CheckoutPage() {
             <div className="p-4 space-y-2 text-sm">
               <div className="flex justify-between"><span className="text-[#555]">Price ({items.length} items)</span><span>₹{currentSummary.summary.totalMrp.toLocaleString("en-IN")}</span></div>
               <div className="flex justify-between text-[#388E3C]"><span>Discount</span><span>- ₹{currentSummary.summary.discount.toLocaleString("en-IN")}</span></div>
-              {currentSummary.summary.couponDiscount > 0 && <div className="flex justify-between text-[#388E3C]"><span>Coupon</span><span>- ₹{currentSummary.summary.couponDiscount.toLocaleString("en-IN")}</span></div>}
+              {currentSummary.summary.couponDiscount > 0 && <div className="flex justify-between text-[#388E3C]"><span>Coupon{appliedCouponCode ? ` (${appliedCouponCode})` : ""}</span><span>- ₹{currentSummary.summary.couponDiscount.toLocaleString("en-IN")}</span></div>}
               <div className="flex justify-between"><span className="text-[#555]">Delivery Charges</span><span className={currentSummary.summary.deliveryCharges === 0 ? "text-[#388E3C]" : ""}>{currentSummary.summary.deliveryCharges === 0 ? "FREE" : `₹${currentSummary.summary.deliveryCharges.toLocaleString("en-IN")}`}</span></div>
               <div className="border-t border-dashed border-gray-300 pt-2 mt-2 flex justify-between font-bold text-[#212121] text-base"><span>Total Amount</span><span>₹{currentSummary.summary.totalAmount.toLocaleString("en-IN")}</span></div>
+              <div className="pt-3 border-t border-[#F0F0F0] mt-2 space-y-2">
+                <label className="block text-xs font-semibold text-[#555]">Apply Coupon</label>
+                <div className="flex gap-2">
+                  <input
+                    value={couponCode}
+                    onChange={(e) => { setCouponCode(e.target.value.toUpperCase()); setCouponError(null); }}
+                    placeholder="Enter coupon code"
+                    className="flex-1 h-9 px-2.5 border border-gray-300 rounded-xs text-xs uppercase tracking-wide"
+                    disabled={couponApplying}
+                  />
+                  {appliedCouponCode ? (
+                    <button type="button" onClick={handleRemoveCoupon} className="h-9 px-3 text-xs font-semibold border border-gray-300 rounded-xs hover:bg-gray-50">Remove</button>
+                  ) : (
+                    <button type="button" onClick={handleApplyCoupon} disabled={couponApplying || !couponCode.trim()} className="h-9 px-3 text-xs font-semibold bg-[#2874F0] text-white rounded-xs hover:bg-blue-700 disabled:opacity-50">{couponApplying ? "Applying..." : "Apply"}</button>
+                  )}
+                </div>
+                {couponMessage && <p className="text-[11px] text-[#388E3C]">{couponMessage}</p>}
+                {couponError && <p className="text-[11px] text-red-600">{couponError}</p>}
+              </div>
             </div>
             <div className="px-4 pb-4 space-y-2">{summaryLoading && <p className="text-xs text-[#878787]">Updating server pricing...</p>}<div className="flex items-center gap-2 text-xs text-[#388E3C] font-semibold"><ShieldCheck size={14} /><span>Safe and Secure Payments</span></div></div>
           </aside>

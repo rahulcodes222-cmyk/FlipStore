@@ -182,7 +182,7 @@ export async function getProductBySlug(slug: string): Promise<IProductDocument |
  * Supports sellerId filtering for vendor data isolation.
  */
 export async function getProducts(
-  query: ProductQueryInput,
+  query: ProductQueryInput & Record<string, any>,
   sellerId?: string,
 ): Promise<{ data: IProductDocument[]; total: number; page: number; limit: number; totalPages: number; hasMore: boolean }> {
   const filter: Record<string, unknown> = {};
@@ -192,19 +192,47 @@ export async function getProducts(
     filter.sellerId = sellerId;
   }
 
-  // Category filter
-  if (query.category) {
-    filter.category = query.category;
+  // Category filter (accept name, slug-like value, or id)
+  if (query.categoryId && /^[a-f\d]{24}$/i.test(String(query.categoryId))) {
+    filter.categoryId = String(query.categoryId);
+  }
+  if (query.category && !filter.categoryId) {
+    const raw = String(query.category).trim();
+    const esc = raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const normalizedSlug = raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const nameFromSlug = normalizedSlug.replace(/-/g, ' ').trim();
+    const catDoc = await CategoryModel.findOne({
+      $or: [
+        { slug: raw.toLowerCase() },
+        { slug: normalizedSlug },
+        { name: new RegExp(`^${esc}$`, 'i') },
+        { name: new RegExp(`^${nameFromSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      ],
+    }).select('_id name slug').lean().exec() as any;
+
+    const ors: any[] = [];
+    if (catDoc?._id) {
+      ors.push({ categoryId: catDoc._id });
+      if (catDoc.name) ors.push({ category: new RegExp(`^${String(catDoc.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') });
+      if (catDoc.slug) ors.push({ category: new RegExp(`^${String(catDoc.slug).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') });
+    }
+    ors.push({ category: new RegExp(`^${esc}$`, 'i') });
+    ors.push({ category: new RegExp(`^${esc.replace(/-/g, '[\\s-]+')}$`, 'i') });
+    if (nameFromSlug) ors.push({ category: new RegExp(`^${nameFromSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\s+/g, '[\\s-]+')}$`, 'i') });
+    filter.$or = ors;
   }
 
   // Brand filter
   if (query.brand) {
-    filter.brand = query.brand;
+    filter.brand = new RegExp(`^${String(query.brand).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
   }
 
   // Status filter
   if (query.status) {
     filter.status = query.status;
+  } else if (!sellerId) {
+    // Public storefront listings should not expose drafts/rejected items
+    filter.status = 'PUBLISHED';
   }
 
   // Stock filter
@@ -214,11 +242,19 @@ export async function getProducts(
     } else if (query.stock === 'OUT_OF_STOCK') {
       filter.stock = 0;
     } else if (query.stock === 'LOW_STOCK') {
-      // Low stock: stock > 0 and <= threshold
       filter.$expr = { $lte: ['$stock', '$lowStockThreshold'] };
       filter.stock = { $gt: 0 };
     }
   }
+
+  // Additional storefront filters
+  const qAny = query as any;
+  if (qAny.isAssured === true || qAny.isAssured === 'true') filter.isAssured = true;
+  if (qAny.minPrice != null && qAny.minPrice !== '') filter.price = { ...(filter.price as any || {}), $gte: Number(qAny.minPrice) };
+  if (qAny.maxPrice != null && qAny.maxPrice !== '') filter.price = { ...(filter.price as any || {}), $lte: Number(qAny.maxPrice) };
+  if (qAny.minRating != null && qAny.minRating !== '') filter.rating = { ...(filter.rating as any || {}), $gte: Number(qAny.minRating) };
+  if (qAny.minDiscount != null && qAny.minDiscount !== '') filter.discountPercentage = { ...(filter.discountPercentage as any || {}), $gte: Number(qAny.minDiscount) };
+  if (qAny.inStock === true || qAny.inStock === 'true') filter.stock = { ...(typeof filter.stock === 'object' && filter.stock ? filter.stock : {}), $gt: 0 };
 
   // Search
   if (query.search) {
@@ -477,7 +513,15 @@ export async function publishProduct(
   sellerId: string,
   publish: boolean,
 ): Promise<IProductDocument | null> {
-  const product = await ProductModel.findOne({ _id: productId, sellerId }).exec();
+  let product = await ProductModel.findOne({ _id: productId, sellerId }).exec();
+  if (!product) {
+    const { UserModel } = await import('@/backend/models');
+    const actor = await UserModel.findById(sellerId).select('role').lean().exec() as any;
+    const role = String(actor?.role || '').toLowerCase();
+    if (role === 'admin' || role === 'super_admin') {
+      product = await ProductModel.findById(productId).exec();
+    }
+  }
   if (!product) {
     throw new Error('Product not found.');
   }

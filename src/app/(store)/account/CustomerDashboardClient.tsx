@@ -779,7 +779,7 @@ export function CustomerDashboardClient() {
                             <div key={idx} className="flex gap-3 items-center">
                               <div className="relative w-12 h-12 bg-gray-50 border border-gray-100 rounded-xs overflow-hidden shrink-0">
                                 <Image
-                                  src={item.thumbnail}
+                                  src={item.thumbnail || "/placeholder-product.svg"}
                                   alt={item.title}
                                   fill
                                   sizes="48px"
@@ -852,7 +852,7 @@ export function CustomerDashboardClient() {
                       >
                         <div className="relative w-16 h-16 bg-gray-50 border border-gray-100 rounded-xs overflow-hidden shrink-0">
                           <Image
-                            src={product.thumbnail || product.images[0]}
+                            src={product.thumbnail || product.images[0] || "/placeholder-product.svg"}
                             alt={product.title}
                             fill
                             sizes="64px"

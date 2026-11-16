@@ -252,7 +252,7 @@ export function SearchBar({
                           <button
                             type="button"
                             onClick={() => {
-                              router.push(`/products/${product.slug}`);
+                              router.push(`/product/${product.slug}`);
                               setIsOpen(false);
                               onMobileClose?.();
                             }}
@@ -267,7 +267,7 @@ export function SearchBar({
                             {/* Product Thumbnail */}
                             <div className="relative w-11 h-11 bg-white rounded-xs border border-[#F0F0F0] shrink-0 overflow-hidden flex items-center justify-center p-1">
                               <Image
-                                src={product.thumbnail || product.images[0]}
+                                src={product.thumbnail || product.images[0] || "/placeholder-product.svg"}
                                 alt={product.title}
                                 fill
                                 sizes="44px"

@@ -20,6 +20,8 @@ import { RecentlyViewedSection } from "@/components/home/RecentlyViewedSection";
 import { NewsletterSection } from "@/components/home/NewsletterSection";
 import { CategoryCard } from "@/components/common/CategoryCard";
 
+export const instant = false;
+
 export const metadata: Metadata = {
   title: "FlipStore India – Online Shopping for Mobiles, Electronics, Fashion & Home",
   description:
@@ -35,6 +37,8 @@ export default async function HomePage() {
     bestSellers,
     homeProducts,
     featuredProducts,
+    latestProducts,
+    electronicsProducts,
   ] = await Promise.all([
     categoryService.getCategories(),
     productService.getDealsOfTheDay(5),
@@ -42,7 +46,14 @@ export default async function HomePage() {
     productService.getBestSellingProducts(5),
     productService.getHomeLifestyleProducts(5),
     productService.getFeaturedProducts(5),
+    productService.getProducts({ limit: 10, sortBy: "newest" } as any).then(r => r.data).catch(() => []),
+    productService.getProducts({ category: "electronics", limit: 10, sortBy: "newest" } as any).then(r => r.data).catch(() => []),
   ]);
+
+  const safeDeals = bestDeals.length ? bestDeals : latestProducts.slice(0, 5);
+  const safeTrending = trendingProducts.length ? trendingProducts : latestProducts.slice(0, 5);
+  const safeBestSellers = bestSellers.length ? bestSellers : latestProducts.slice(0, 5);
+  const safeElectronics = electronicsProducts.length ? electronicsProducts : latestProducts.filter((p: any) => /electronic/i.test(String(p.categoryName || p.category || p.categorySlug || ""))).slice(0, 10);
 
   // Promotional Banners
   const heroBanners = MOCK_BANNERS.filter((b) => b.position === "hero");
@@ -96,7 +107,7 @@ export default async function HomePage() {
 
         {/* SECTION 5: Best Deals (Deal of the Day with Countdown Timer) */}
         <DealsSection
-          products={bestDeals}
+          products={safeDeals}
           title="Deals of the Day"
           subtitle="Top discounts ending tonight – grab them before stock runs out"
           viewAllHref="/offers"
@@ -111,12 +122,26 @@ export default async function HomePage() {
               <TrendingUp size={18} />
             </div>
           }
-          products={trendingProducts}
+          products={safeTrending}
           viewAllHref="/search?q=trending"
         />
 
         {/* SECTION 8: Electronics Promotional Banner */}
         <PromoBanner banner={electronicsPromo} />
+
+        {safeElectronics.length > 0 && (
+          <ProductSectionRow
+            title="Electronics & Gadgets"
+            subtitle="Latest electronics from our store"
+            icon={
+              <div className="p-1.5 rounded-full bg-blue-50 text-[#2874F0]">
+                <TrendingUp size={18} />
+              </div>
+            }
+            products={safeElectronics}
+            viewAllHref="/category/electronics"
+          />
+        )}
 
         {/* SECTION 7: Best-Selling Products */}
         <ProductSectionRow
@@ -127,7 +152,7 @@ export default async function HomePage() {
               <Award size={18} />
             </div>
           }
-          products={bestSellers}
+          products={safeBestSellers}
           viewAllHref="/search?q=bestseller"
         />
 
@@ -148,7 +173,7 @@ export default async function HomePage() {
         />
 
         {/* SECTION 11: Recently Viewed Products (Zustand persistent + Curated Fallback) */}
-        <RecentlyViewedSection fallbackProducts={featuredProducts} />
+        <RecentlyViewedSection fallbackProducts={featuredProducts.length ? featuredProducts : latestProducts} />
 
         {/* SECTION 12: Newsletter Subscription with Instant Coupon */}
         <NewsletterSection />

@@ -236,11 +236,16 @@ export const GET = withDatabase(
         { status: HTTP_STATUS.OK },
       );
     } catch (error: unknown) {
+      console.error('[categories GET] Failed to fetch categories:', error);
+      const msg = error instanceof Error ? error.message : 'Failed to fetch categories.';
       return NextResponse.json(
-        createErrorResponse('Failed to fetch categories.', {
-          statusCode: HTTP_STATUS.INTERNAL_SERVER_ERROR,
-          code: 'CATEGORIES_FETCH_FAILED',
-        }),
+        createErrorResponse(
+          process.env.NODE_ENV === 'production' ? 'Failed to fetch categories.' : `Failed to fetch categories: ${msg}`,
+          {
+            statusCode: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+            code: 'CATEGORIES_FETCH_FAILED',
+          },
+        ),
         { status: HTTP_STATUS.INTERNAL_SERVER_ERROR },
       );
     }

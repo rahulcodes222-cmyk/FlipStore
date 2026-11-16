@@ -442,7 +442,7 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
                   <div key={idx} className="py-3.5 first:pt-0 last:pb-0 flex gap-4 items-start">
                     <div className="relative w-20 h-20 sm:w-24 sm:h-24 bg-gray-50 border border-gray-100 rounded-xs overflow-hidden shrink-0">
                       <Image
-                        src={item.thumbnail}
+                        src={item.thumbnail || "/placeholder-product.svg"}
                         alt={item.title}
                         fill
                         sizes="96px"

@@ -5,7 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/backend/config/db';
+import { connectDB, runWithDbReconnect } from '@/backend/config/db';
 import { createErrorResponse } from '@/backend/utils/response';
 import { HTTP_STATUS } from '@/backend/constants';
 
@@ -18,22 +18,22 @@ export function withDatabase(
 ) {
   return async (req: NextRequest, context?: any): Promise<NextResponse> => {
     try {
-      await connectDB();
-      return handler(req, context);
+      return await runWithDbReconnect(() => handler(req, context));
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : 'Database connection unavailable.';
-      console.error('[Database] Connection failed:', error);
+      console.error('[Database] Connection/request failed:', error);
+      const isConnMsg = /client must be connected|topology is closed|connection closed|server selection timed out|database connection/i.test(message);
       return NextResponse.json(
         createErrorResponse(
           process.env.NODE_ENV === 'production'
-            ? 'Database connection unavailable.'
-            : `Database connection unavailable: ${message}`,
+            ? (isConnMsg ? 'Database connection unavailable.' : 'Request failed.')
+            : `${isConnMsg ? 'Database connection unavailable' : 'Request failed'}: ${message}`,
           {
-            statusCode: HTTP_STATUS.SERVICE_UNAVAILABLE,
-            code: 'DB_CONNECTION_ERROR',
+            statusCode: isConnMsg ? HTTP_STATUS.SERVICE_UNAVAILABLE : HTTP_STATUS.INTERNAL_SERVER_ERROR,
+            code: isConnMsg ? 'DB_CONNECTION_ERROR' : 'REQUEST_FAILED',
           },
         ),
-        { status: HTTP_STATUS.SERVICE_UNAVAILABLE },
+        { status: isConnMsg ? HTTP_STATUS.SERVICE_UNAVAILABLE : HTTP_STATUS.INTERNAL_SERVER_ERROR },
       );
     }
   };

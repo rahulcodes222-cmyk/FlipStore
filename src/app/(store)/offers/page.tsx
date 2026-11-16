@@ -3,6 +3,8 @@ import { productService } from "@/services/productService";
 import { ProductCard } from "@/components/common/ProductCard";
 import { Flame } from "lucide-react";
 
+export const instant = false;
+
 export default async function OffersPage() {
   const deals = await productService.getDealsOfTheDay(12);
 

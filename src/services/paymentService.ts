@@ -25,6 +25,50 @@ export type VerifyPaymentResponse = {
   sandbox: boolean;
 };
 
+
+
+
+function getStoredAccessToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try { return window.localStorage.getItem("my_ecommerce_access_token_v1"); } catch { return null; }
+}
+function setStoredAccessToken(token?: string): void {
+  if (typeof window === "undefined") return;
+  try { if (token) window.localStorage.setItem("my_ecommerce_access_token_v1", token); } catch {}
+}
+function withAuthHeaders(init: RequestInit = {}): RequestInit {
+  const token = getStoredAccessToken();
+  const headers = new Headers(init.headers || {});
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  return { ...init, headers };
+}
+
+async function tryRefreshAuth(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, withAuthHeaders({
+      method: "POST",
+      credentials: "include",
+    }));
+    if (!res.ok) return false;
+    const body = await res.json().catch(() => ({} as any));
+    const token = body?.data?.accessToken || body?.accessToken;
+    if (token) setStoredAccessToken(token);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchWithAuthRetry(input: RequestInfo | URL, init: RequestInit = {}, canRetry = true): Promise<Response> {
+  const reqInit = withAuthHeaders({ credentials: "include", ...init });
+  const res = await fetch(input, reqInit);
+  if (res.status === 401 && canRetry) {
+    const refreshed = await tryRefreshAuth();
+    if (refreshed) return fetch(input, withAuthHeaders({ credentials: "include", ...init }));
+  }
+  return res;
+}
+
 async function unwrap<T>(res: Response): Promise<T> {
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json?.success === false) {
@@ -34,9 +78,8 @@ async function unwrap<T>(res: Response): Promise<T> {
 }
 
 export async function createPaymentOrder(orderId: string, idempotencyKey?: string): Promise<CreatePaymentOrderResponse> {
-  const res = await fetch(`${API_BASE}/api/v1/payments/create-order`, {
+  const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/payments/create-order`, {
     method: 'POST',
-    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ orderId, idempotencyKey }),
   });
@@ -49,9 +92,8 @@ export async function verifyPayment(input: {
   razorpayPaymentId: string;
   razorpaySignature: string;
 }): Promise<VerifyPaymentResponse> {
-  const res = await fetch(`${API_BASE}/api/v1/payments/verify`, {
+  const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/payments/verify`, {
     method: 'POST',
-    credentials: 'include',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   });
@@ -59,9 +101,8 @@ export async function verifyPayment(input: {
 }
 
 export async function getPayment(id: string): Promise<unknown> {
-  const res = await fetch(`${API_BASE}/api/v1/payments/${encodeURIComponent(id)}`, {
+  const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/payments/${encodeURIComponent(id)}`, {
     method: 'GET',
-    credentials: 'include',
   });
   return unwrap<unknown>(res);
 }

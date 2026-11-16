@@ -96,11 +96,11 @@ export function FrequentlyBoughtTogether({
 
                 <div className="flex flex-col items-center text-center max-w-[130px]">
                   <Link
-                    href={`/products/${item.slug}`}
+                    href={`/product/${item.slug}`}
                     className="relative w-24 h-24 sm:w-28 sm:h-28 bg-white border border-[#E0E0E0] rounded-sm p-2 flex items-center justify-center overflow-hidden hover:border-[#2874F0] transition-colors"
                   >
                     <Image
-                      src={item.thumbnail || item.images[0]}
+                      src={item.thumbnail || item.images[0] || "/placeholder-product.svg"}
                       alt={item.title}
                       fill
                       sizes="112px"

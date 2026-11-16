@@ -44,7 +44,7 @@ export function ProductDetailsView({ product }: ProductDetailsViewProps) {
                 </Link>
                 <ChevronRight size={12} />
                 <Link
-                  href={`/products/${product.categorySlug}`}
+                  href={`/category/${product.categorySlug}`}
                   className="hover:text-[#2874F0] transition-colors"
                 >
                   {product.categoryName}

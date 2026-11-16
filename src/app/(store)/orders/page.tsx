@@ -321,7 +321,7 @@ export default function OrdersHistoryPage() {
                         <div className="flex gap-3.5 items-start">
                           <div className="relative w-16 h-16 sm:w-20 sm:h-20 bg-gray-50 border border-gray-100 rounded-xs overflow-hidden shrink-0">
                             <Image
-                              src={item.thumbnail}
+                              src={item.thumbnail || "/placeholder-product.svg"}
                               alt={item.title}
                               fill
                               sizes="80px"

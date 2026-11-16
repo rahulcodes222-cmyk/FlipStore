@@ -32,6 +32,49 @@ export interface CheckoutSummaryResponse {
   };
 }
 
+
+
+function getStoredAccessToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try { return window.localStorage.getItem("my_ecommerce_access_token_v1"); } catch { return null; }
+}
+function setStoredAccessToken(token?: string): void {
+  if (typeof window === "undefined") return;
+  try { if (token) window.localStorage.setItem("my_ecommerce_access_token_v1", token); } catch {}
+}
+function withAuthHeaders(init: RequestInit = {}): RequestInit {
+  const token = getStoredAccessToken();
+  const headers = new Headers(init.headers || {});
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  return { ...init, headers };
+}
+
+async function tryRefreshAuth(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, withAuthHeaders({
+      method: "POST",
+      credentials: "include",
+    }));
+    if (!res.ok) return false;
+    const body = await res.json().catch(() => ({} as any));
+    const token = body?.data?.accessToken || body?.accessToken;
+    if (token) setStoredAccessToken(token);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchWithAuthRetry(input: RequestInfo | URL, init: RequestInit = {}, canRetry = true): Promise<Response> {
+  const reqInit = withAuthHeaders({ credentials: "include", ...init });
+  const res = await fetch(input, reqInit);
+  if (res.status === 401 && canRetry) {
+    const refreshed = await tryRefreshAuth();
+    if (refreshed) return fetch(input, withAuthHeaders({ credentials: "include", ...init }));
+  }
+  return res;
+}
+
 export interface CreateOrderResponse {
   id: string;
   orderNumber: string;
@@ -59,16 +102,16 @@ export const orderService = {
   async getCheckoutSummary(payload: {
     shippingAddressId: string;
     paymentMethod: PaymentMethod;
+    couponCode?: string;
     items: Array<{
       productId: string;
       variantId?: string;
       quantity: number;
     }>;
-  }): Promise<CheckoutSummaryResponse> {
-    const res = await fetch(`${API_BASE}/api/v1/checkout/summary`, {
+  }): Promise<CheckoutSummaryResponse & { appliedCoupon?: any }> {
+    const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/checkout/summary`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({
         cartItems: payload.items.map((i) => ({
           productId: i.productId,
@@ -77,6 +120,7 @@ export const orderService = {
         })),
         shippingAddressId: payload.shippingAddressId,
         paymentMethod: payload.paymentMethod,
+        ...(payload.couponCode?.trim() ? { couponCode: payload.couponCode.trim() } : {}),
       }),
     });
 
@@ -84,18 +128,43 @@ export const orderService = {
     if (!res.ok || json?.success === false) {
       throw new Error(json?.message || json?.error?.message || "Failed to calculate checkout summary.");
     }
-    return json.data as CheckoutSummaryResponse;
+    return json.data as CheckoutSummaryResponse & { appliedCoupon?: any };
+  },
+
+  async validateCoupon(payload: {
+    couponCode: string;
+    shippingAddressId: string;
+    items: Array<{ productId: string; variantId?: string; quantity: number }>;
+  }): Promise<CheckoutSummaryResponse & { appliedCoupon?: any }> {
+    const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/checkout/validate-coupon`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        couponCode: payload.couponCode.trim(),
+        shippingAddressId: payload.shippingAddressId,
+        cartItems: payload.items.map((i) => ({
+          productId: i.productId,
+          variantId: i.variantId,
+          quantity: i.quantity,
+        })),
+      }),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      throw new Error(json?.message || json?.error?.message || "Invalid coupon code.");
+    }
+    return json.data as CheckoutSummaryResponse & { appliedCoupon?: any };
   },
 
   async createOrder(payload: {
     shippingAddressId: string;
     paymentMethod: PaymentMethod;
     couponCode?: string;
+    cartItems?: Array<{ productId: string; variantId?: string; quantity: number }>;
   }): Promise<CreateOrderResponse> {
-    const res = await fetch(`${API_BASE}/api/v1/orders`, {
+    const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/orders`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify(payload),
     });
 
@@ -107,9 +176,8 @@ export const orderService = {
   },
 
   async getOrderById(orderId: string): Promise<Order | null> {
-    const res = await fetch(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}`, {
+    const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}`, {
       method: "GET",
-      credentials: "include",
     });
 
     const json = await res.json().catch(() => ({}));
@@ -144,9 +212,8 @@ export const orderService = {
   },
 
   async getOrders(): Promise<Order[]> {
-    const res = await fetch(`${API_BASE}/api/v1/orders/my-orders`, {
+    const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/orders/my-orders`, {
       method: "GET",
-      credentials: "include",
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || json?.success === false) {
@@ -178,9 +245,8 @@ export const orderService = {
   },
 
   async getOrderTracking(orderId: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}/tracking`, {
+    const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}/tracking`, {
       method: "GET",
-      credentials: "include",
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || json?.success === false) {
@@ -190,9 +256,8 @@ export const orderService = {
   },
 
   async getInvoice(orderId: string): Promise<any> {
-    const res = await fetch(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}/invoice`, {
+    const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}/invoice`, {
       method: "GET",
-      credentials: "include",
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || json?.success === false) {
@@ -202,10 +267,9 @@ export const orderService = {
   },
 
   async createReturn(payload: { orderId: string; productId: string; quantity?: number; reason: string; type?: 'RETURN' | 'REPLACEMENT'; notes?: string; subOrderId?: string }): Promise<any> {
-    const res = await fetch(`${API_BASE}/api/v1/returns`, {
+    const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/returns`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify(payload),
     });
     const json = await res.json().catch(() => ({}));
@@ -216,17 +280,16 @@ export const orderService = {
   },
 
   async getMyReturns(): Promise<any[]> {
-    const res = await fetch(`${API_BASE}/api/v1/returns/my-returns`, { method: "GET", credentials: "include" });
+    const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/returns/my-returns`, { method: "GET" });
     const json = await res.json().catch(() => ({}));
     if (!res.ok || json?.success === false) return [];
     return (json.data || []) as any[];
   },
 
   async cancelOrder(orderId: string, reason?: string): Promise<Order> {
-    const res = await fetch(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}/cancel`, {
+    const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}/cancel`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify(reason ? { reason } : {}),
     });
     const json = await res.json().catch(() => ({}));
@@ -238,10 +301,9 @@ export const orderService = {
   },
 
   async updateOrderStatus(orderId: string, status: string): Promise<Order> {
-    const res = await fetch(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}/status`, {
+    const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify({ status }),
     });
     const json = await res.json().catch(() => ({}));

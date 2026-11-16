@@ -69,7 +69,7 @@ async function validateRequestBody<T>(
  */
 export const POST = withDatabase(
   withAuth(
-    withRole(USER_ROLES.VENDOR)(async (authReq) => {
+    async (authReq) => {
       if (!authReq.user) {
         return NextResponse.json(
           createErrorResponse('Authentication required.', {
@@ -79,6 +79,10 @@ export const POST = withDatabase(
           }),
           { status: HTTP_STATUS.UNAUTHORIZED },
         );
+      }
+      const role = String(authReq.user.role || '').toLowerCase();
+      if (role !== 'vendor' && role !== 'admin' && role !== 'super_admin') {
+        return NextResponse.json(createErrorResponse('Insufficient permissions.', { statusCode: HTTP_STATUS.FORBIDDEN, code: 'INSUFFICIENT_PERMISSIONS', requestId: authReq.requestId }), { status: HTTP_STATUS.FORBIDDEN });
       }
 
       try {
@@ -175,7 +179,7 @@ export const POST = withDatabase(
         }
         return NextResponse.json(createErrorResponse('Failed to create product.', { statusCode: HTTP_STATUS.INTERNAL_SERVER_ERROR, code: 'PRODUCT_CREATE_FAILED' }), { status: HTTP_STATUS.INTERNAL_SERVER_ERROR });
       }
-    }),
+    },
   ),
 );
 
@@ -200,6 +204,12 @@ export const GET = withDatabase(
       const page = url.searchParams.get('page') || '1';
       const limit = url.searchParams.get('limit') || '20';
       const slug = url.searchParams.get('slug') || undefined;
+      const isAssured = url.searchParams.get('isAssured') || undefined;
+      const minPrice = url.searchParams.get('minPrice') || undefined;
+      const maxPrice = url.searchParams.get('maxPrice') || undefined;
+      const minRating = url.searchParams.get('minRating') || undefined;
+      const minDiscount = url.searchParams.get('minDiscount') || undefined;
+      const inStock = url.searchParams.get('inStock') || undefined;
 
       // If slug is provided, return single product
       if (slug) {
@@ -304,7 +314,13 @@ export const GET = withDatabase(
             sortBy: sortBy as any, // eslint-disable-line @typescript-eslint/no-explicit-any
             page,
             limit,
-          },
+            isAssured,
+            minPrice,
+            maxPrice,
+            minRating,
+            minDiscount,
+            inStock,
+          } as any,
           undefined,
         );
 
@@ -383,11 +399,16 @@ export const GET = withDatabase(
           { status: HTTP_STATUS.OK },
         );
       } catch (error: unknown) {
+        console.error('[products GET] Failed to fetch products:', error);
+        const msg = error instanceof Error ? error.message : 'Failed to fetch products.';
         return NextResponse.json(
-          createErrorResponse('Failed to fetch products.', {
-            statusCode: HTTP_STATUS.INTERNAL_SERVER_ERROR,
-            code: 'PRODUCTS_FETCH_FAILED',
-          }),
+          createErrorResponse(
+            process.env.NODE_ENV === 'production' ? 'Failed to fetch products.' : `Failed to fetch products: ${msg}`,
+            {
+              statusCode: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+              code: 'PRODUCTS_FETCH_FAILED',
+            },
+          ),
           { status: HTTP_STATUS.INTERNAL_SERVER_ERROR },
         );
       }
@@ -511,7 +532,7 @@ export const productIdGET = withDatabase(
  * PATCH /api/v1/products/:id
 export const productUpdateHandler = withDatabase(
   withAuth(
-    withRole(USER_ROLES.VENDOR)(async (authReq) => {
+    async (authReq) => {
       if (!authReq.user) {
         return NextResponse.json(
           createErrorResponse('Authentication required.', {
@@ -521,6 +542,10 @@ export const productUpdateHandler = withDatabase(
           }),
           { status: HTTP_STATUS.UNAUTHORIZED },
         );
+      }
+      const role = String(authReq.user.role || '').toLowerCase();
+      if (role !== 'vendor' && role !== 'admin' && role !== 'super_admin') {
+        return NextResponse.json(createErrorResponse('Insufficient permissions.', { statusCode: HTTP_STATUS.FORBIDDEN, code: 'INSUFFICIENT_PERMISSIONS', requestId: authReq.requestId }), { status: HTTP_STATUS.FORBIDDEN });
       }
 
       const url = new URL(authReq.url);
@@ -602,7 +627,7 @@ export const productUpdateHandler = withDatabase(
           { status: HTTP_STATUS.INTERNAL_SERVER_ERROR },
         );
       }
-    }),
+    },
   ),
 );
 
@@ -612,7 +637,7 @@ export const productUpdateHandler = withDatabase(
  */
 export const productIdDELETE = withDatabase(
   withAuth(
-    withRole(USER_ROLES.VENDOR)(async (authReq) => {
+    async (authReq) => {
       if (!authReq.user) {
         return NextResponse.json(
           createErrorResponse('Authentication required.', {
@@ -622,6 +647,10 @@ export const productIdDELETE = withDatabase(
           }),
           { status: HTTP_STATUS.UNAUTHORIZED },
         );
+      }
+      const role = String(authReq.user.role || '').toLowerCase();
+      if (role !== 'vendor' && role !== 'admin' && role !== 'super_admin') {
+        return NextResponse.json(createErrorResponse('Insufficient permissions.', { statusCode: HTTP_STATUS.FORBIDDEN, code: 'INSUFFICIENT_PERMISSIONS', requestId: authReq.requestId }), { status: HTTP_STATUS.FORBIDDEN });
       }
 
       const url = new URL(authReq.url);
@@ -666,7 +695,7 @@ export const productIdDELETE = withDatabase(
           { status: HTTP_STATUS.INTERNAL_SERVER_ERROR },
         );
       }
-    }),
+    },
   ),
 );
 
@@ -676,7 +705,7 @@ export const productIdDELETE = withDatabase(
  */
 export const productIdPublishPATCH = withDatabase(
   withAuth(
-    withRole(USER_ROLES.VENDOR)(async (authReq) => {
+    async (authReq) => {
       if (!authReq.user) {
         return NextResponse.json(
           createErrorResponse('Authentication required.', {
@@ -686,6 +715,10 @@ export const productIdPublishPATCH = withDatabase(
           }),
           { status: HTTP_STATUS.UNAUTHORIZED },
         );
+      }
+      const role = String(authReq.user.role || '').toLowerCase();
+      if (role !== 'vendor' && role !== 'admin' && role !== 'super_admin') {
+        return NextResponse.json(createErrorResponse('Insufficient permissions.', { statusCode: HTTP_STATUS.FORBIDDEN, code: 'INSUFFICIENT_PERMISSIONS', requestId: authReq.requestId }), { status: HTTP_STATUS.FORBIDDEN });
       }
 
       const url = new URL(authReq.url);
@@ -763,6 +796,6 @@ export const productIdPublishPATCH = withDatabase(
           { status: HTTP_STATUS.INTERNAL_SERVER_ERROR },
         );
       }
-    }),
+    },
   ),
 );

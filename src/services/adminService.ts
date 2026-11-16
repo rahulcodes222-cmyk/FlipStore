@@ -26,6 +26,32 @@ import {
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
+function getStoredAccessTokenAdmin(): string | null {
+  if (typeof window === "undefined") return null;
+  try { return window.localStorage.getItem("my_ecommerce_access_token_v1"); } catch { return null; }
+}
+function adminAuthHeaders(init: RequestInit = {}): RequestInit {
+  const token = getStoredAccessTokenAdmin();
+  const headers = new Headers(init.headers || {});
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  return { ...init, headers, credentials: "include" as RequestCredentials };
+}
+async function adminFetch(input: RequestInfo | URL, init: RequestInit = {}, canRetry = true): Promise<Response> {
+  let res = await fetch(input, adminAuthHeaders(init));
+  if (res.status === 401 && canRetry) {
+    try {
+      const r = await fetch(`${API_BASE}/api/v1/auth/refresh`, adminAuthHeaders({ method: "POST" }));
+      if (r.ok) {
+        const b = await r.json().catch(() => ({} as any));
+        const t = b?.data?.accessToken || b?.accessToken;
+        if (t) try { window.localStorage.setItem("my_ecommerce_access_token_v1", t); } catch {}
+        res = await fetch(input, adminAuthHeaders(init));
+      }
+    } catch {}
+  }
+  return res;
+}
+
 // ─── Storage Keys ─────────────────────────────────────────────────────────────
 const STORAGE_KEYS = {
   PRODUCTS: "flipstore_admin_products_v1",
@@ -260,46 +286,148 @@ export const adminService = {
     }
   },
 
-  // ── Orders ──────────────────────────────────────────────────────────────────
+  // ── Orders (DB-backed via API) ──────────────────────────────────────────────
   async getOrders(): Promise<Order[]> {
-    return readStorage<Order[]>(STORAGE_KEYS.ORDERS, MOCK_ORDERS);
+    const res = await adminFetch(`${API_BASE}/api/v1/orders`, { method: "GET" });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || body?.error?.message || "Failed to fetch orders.");
+    }
+    const list = Array.isArray(body?.data) ? body.data : [];
+    return list.map((o: any) => this._mapApiOrder(o));
   },
 
   async getOrderById(id: string): Promise<Order | null> {
-    const orders = await this.getOrders();
-    return orders.find((o) => o.id === id || o.orderNumber === id) || null;
+    const res = await adminFetch(`${API_BASE}/api/v1/orders/${encodeURIComponent(id)}`, { method: "GET" });
+    const body = await res.json().catch(() => ({} as any));
+    if (res.status === 404) return null;
+    if (!res.ok || body?.success === false) {
+      try {
+        const orders = await this.getOrders();
+        return orders.find((o) => o.id === id || o.orderNumber === id) || null;
+      } catch {
+        return null;
+      }
+    }
+    return body?.data ? this._mapApiOrder(body.data) : null;
   },
 
   async updateOrderStatus(id: string, status: OrderStatus): Promise<Order> {
-    const orders = await this.getOrders();
-    const index = orders.findIndex((o) => o.id === id || o.orderNumber === id);
-    if (index === -1) throw new Error("Order not found");
-
-    orders[index].orderStatus = status;
-    if (status === "DELIVERED") {
-      orders[index].deliveredAt = new Date().toISOString();
-      orders[index].paymentStatus = "PAID";
+    const res = await adminFetch(`${API_BASE}/api/v1/orders/${encodeURIComponent(id)}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || body?.error?.message || "Failed to update order status.");
     }
-    writeStorage(STORAGE_KEYS.ORDERS, orders);
-    return orders[index];
+    const data = body?.data;
+    if (data) return this._mapApiOrder(data);
+    const refreshed = await this.getOrderById(id);
+    if (!refreshed) throw new Error("Order not found after status update.");
+    return refreshed;
   },
 
-  // ── Customers ───────────────────────────────────────────────────────────────
+  _mapApiOrder(data: any): Order {
+    const toIso = (v: any) => {
+      if (!v) return new Date().toISOString();
+      if (typeof v === "string") return v;
+      const d = new Date(v);
+      return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+    };
+    const addr = data?.shippingAddress || {};
+    return {
+      id: String(data?.id || data?._id || data?.orderNumber || ""),
+      orderNumber: String(data?.orderNumber || data?.subOrderNumber || data?.id || ""),
+      userId: String(data?.userId || data?.customerId || ""),
+      items: Array.isArray(data?.items) ? data.items : [],
+      shippingAddress: {
+        id: String(addr?.id || addr?._id || ""),
+        name: addr?.name || data?.customerName || "Customer",
+        phone: addr?.phone || data?.customerPhone || "",
+        pincode: addr?.pincode || "",
+        locality: addr?.locality || "",
+        street: addr?.street || "",
+        city: addr?.city || "",
+        state: addr?.state || "",
+        landmark: addr?.landmark || "",
+        type: addr?.type || "home",
+        isDefault: !!addr?.isDefault,
+        alternatePhone: addr?.alternatePhone,
+      } as any,
+      paymentMethod: (data?.paymentMethod || "COD") as any,
+      paymentStatus: (data?.paymentStatus || "PENDING") as any,
+      orderStatus: (data?.orderStatus || "PLACED") as any,
+      pricing: {
+        totalMrp: Number(data?.pricing?.totalMrp || 0),
+        discount: Number(data?.pricing?.discount || 0),
+        couponDiscount: Number(data?.pricing?.couponDiscount || 0),
+        deliveryCharges: Number(data?.pricing?.deliveryCharges || 0),
+        totalAmount: Number(data?.pricing?.totalAmount || 0),
+      } as any,
+      placedAt: toIso(data?.placedAt || data?.createdAt),
+      estimatedDelivery: toIso(data?.estimatedDelivery || Date.now() + 3 * 24 * 60 * 60 * 1000),
+      deliveredAt: data?.deliveredAt ? toIso(data.deliveredAt) : undefined,
+      cancelledAt: data?.cancelledAt ? toIso(data.cancelledAt) : undefined,
+      cancelReason: data?.cancelReason,
+      appliedCouponId: data?.appliedCouponId,
+      statusHistory: data?.statusHistory || [],
+      shipments: data?.shipments || [],
+      tracking: data?.tracking,
+      returns: data?.returns || [],
+      invoice: data?.invoice,
+    } as unknown as Order;
+  },
+
+  // ── Customers (DB-backed via admin API) ─────────────────────────────────────
   async getCustomers(query?: string): Promise<User[]> {
-    const users = readStorage<User[]>(STORAGE_KEYS.USERS, MOCK_USERS);
-    if (!query || !query.trim()) return users;
-    const q = query.toLowerCase().trim();
-    return users.filter(
-      (u) =>
-        u.name.toLowerCase().includes(q) ||
-        u.email.toLowerCase().includes(q) ||
-        u.phone.includes(q)
-    );
+    const sp = new URLSearchParams();
+    sp.set("limit", "100");
+    if (query?.trim()) sp.set("search", query.trim());
+    const res = await adminFetch(`${API_BASE}/api/v1/admin/users?${sp.toString()}`, { method: "GET" });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || body?.error?.message || "Failed to fetch customers.");
+    }
+    const payload = body?.data;
+    const list = Array.isArray(payload) ? payload : Array.isArray(payload?.users) ? payload.users : [];
+    return list.map((u: any) => this._mapApiUser(u));
   },
 
   async getCustomerById(id: string): Promise<User | null> {
-    const users = await this.getCustomers();
-    return users.find((u) => u.id === id || u.email === id) || null;
+    try {
+      const res = await adminFetch(`${API_BASE}/api/v1/admin/users/${encodeURIComponent(id)}`, { method: "GET" });
+      const body = await res.json().catch(() => ({} as any));
+      if (res.status === 404) return null;
+      if (res.ok && body?.success !== false && body?.data) return this._mapApiUser(body.data);
+    } catch {}
+    try {
+      const users = await this.getCustomers(id);
+      return users.find((u) => u.id === id || u.email === id) || null;
+    } catch {
+      return null;
+    }
+  },
+
+  _mapApiUser(u: any): User {
+    const toIso = (v: any) => {
+      if (!v) return new Date().toISOString();
+      if (typeof v === "string") return v;
+      const d = new Date(v);
+      return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+    };
+    return {
+      id: String(u?.id || u?._id || ""),
+      name: String(u?.name || ""),
+      email: String(u?.email || ""),
+      phone: String(u?.phone || ""),
+      role: (u?.role || "customer") as any,
+      avatar: u?.avatar,
+      addresses: Array.isArray(u?.addresses) ? u.addresses : [],
+      defaultAddressId: u?.defaultAddressId,
+      createdAt: toIso(u?.createdAt),
+    } as User;
   },
 
   // ── Coupons ─────────────────────────────────────────────────────────────────

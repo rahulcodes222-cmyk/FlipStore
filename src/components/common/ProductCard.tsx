@@ -59,12 +59,12 @@ export function ProductCard({
       >
         {/* Thumbnail Container */}
         <Link
-          href={`/products/${product.slug}`}
+          href={`/product/${product.slug}`}
           className="relative w-full sm:w-48 h-48 sm:h-auto shrink-0 flex items-center justify-center p-2 overflow-hidden bg-white"
         >
           <div className="relative w-full h-full min-h-[160px]">
             <Image
-              src={product.thumbnail || product.images[0]}
+              src={product.thumbnail || product.images[0] || "/placeholder-product.svg"}
               alt={product.title}
               fill
               sizes="(max-width: 640px) 100vw, 200px"
@@ -77,7 +77,7 @@ export function ProductCard({
         <div className="flex-1 flex flex-col justify-between">
           <div>
             <div className="flex items-start justify-between gap-2">
-              <Link href={`/products/${product.slug}`}>
+              <Link href={`/product/${product.slug}`}>
                 <h3 className="text-sm sm:text-base font-medium text-[#212121] group-hover:text-[#2874F0] line-clamp-2 transition-colors">
                   {product.title}
                 </h3>
@@ -201,11 +201,11 @@ export function ProductCard({
 
       {/* Product Image */}
       <Link
-        href={`/products/${product.slug}`}
+        href={`/product/${product.slug}`}
         className="relative block w-full aspect-square mb-3 overflow-hidden"
       >
         <Image
-          src={product.thumbnail || product.images[0]}
+          src={product.thumbnail || product.images[0] || "/placeholder-product.svg"}
           alt={product.title}
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
@@ -217,7 +217,7 @@ export function ProductCard({
       <div className="flex flex-col flex-1 justify-between">
         <div>
           {/* Title */}
-          <Link href={`/products/${product.slug}`}>
+          <Link href={`/product/${product.slug}`}>
             <h3 className="text-xs sm:text-sm font-medium text-[#212121] group-hover:text-[#2874F0] line-clamp-2 leading-snug transition-colors min-h-[2.5rem]">
               {product.title}
             </h3>

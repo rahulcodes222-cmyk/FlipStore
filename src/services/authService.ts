@@ -27,6 +27,7 @@ import { useAuthStore } from "@/store/useAuthStore";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const AUTH_USER_KEY = "my_ecommerce_current_user_v1";
+const ACCESS_TOKEN_KEY = "my_ecommerce_access_token_v1";
 
 interface AuthTokens {
   accessToken: string;
@@ -58,6 +59,27 @@ interface ApiErrorResponse {
 /**
  * Persist user session to localStorage and zustand store.
  */
+
+function getStoredAccessToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try { return window.localStorage.getItem(ACCESS_TOKEN_KEY); } catch { return null; }
+}
+
+function setStoredAccessToken(token?: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (token) window.localStorage.setItem(ACCESS_TOKEN_KEY, token);
+    else window.localStorage.removeItem(ACCESS_TOKEN_KEY);
+  } catch {}
+}
+
+function withAuthHeaders(init: RequestInit = {}): RequestInit {
+  const token = getStoredAccessToken();
+  const headers = new Headers(init.headers || {});
+  if (token && !headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`);
+  return { ...init, headers };
+}
+
 function persistSession(user: User): void {
   if (typeof window === "undefined") return;
   try {
@@ -119,6 +141,7 @@ export async function loginWithPassword(
     throw new Error("Login failed: invalid server response.");
   }
   persistSession(payload.user);
+  if (payload.tokens?.accessToken) setStoredAccessToken(payload.tokens.accessToken);
   return { user: payload.user, token: payload.tokens?.accessToken || "" };
 }
 
@@ -149,6 +172,7 @@ export async function register(input: {
     throw new Error("Registration failed: invalid server response.");
   }
   persistSession(auth.user);
+  if (auth.tokens?.accessToken) setStoredAccessToken(auth.tokens.accessToken);
   return { user: auth.user, token: auth.tokens?.accessToken || "" };
 }
 
@@ -198,10 +222,10 @@ export async function refreshAccessToken(): Promise<string | null> {
  */
 export async function fetchCurrentUser(): Promise<User | null> {
   try {
-    const res = await fetch(`${API_BASE}/api/v1/users/profile`, {
+    const res = await fetch(`${API_BASE}/api/v1/users/profile`, withAuthHeaders({
       method: "GET",
       credentials: "include",
-    });
+    }));
     const body = await res.json().catch(() => ({} as any));
 
     if (res.ok && body?.success !== false && body?.data) {
@@ -250,14 +274,42 @@ export async function updateProfile(updates: Partial<User>): Promise<User> {
  * Get all saved addresses for the authenticated user.
  * Calls GET /api/v1/users/addresses.
  */
+
+
+async function tryRefreshAuthClient(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/auth/refresh`, withAuthHeaders({
+      method: "POST",
+      credentials: "include",
+    }));
+    if (!res.ok) return false;
+    const body = await res.json().catch(() => ({} as any));
+    const token = body?.data?.accessToken || body?.accessToken;
+    if (token) setStoredAccessToken(token);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchAuthApi(input: RequestInfo | URL, init: RequestInit = {}, canRetry = true): Promise<Response> {
+  const reqInit = withAuthHeaders({ credentials: "include", ...init });
+  const res = await fetch(input, reqInit);
+  if (res.status === 401 && canRetry) {
+    const refreshed = await tryRefreshAuthClient();
+    if (refreshed) return fetch(input, withAuthHeaders({ credentials: "include", ...init }));
+  }
+  return res;
+}
+
 export async function getAddresses(): Promise<Address[]> {
-  const res = await fetch(`${API_BASE}/api/v1/users/addresses`, {
+  const res = await fetchAuthApi(`${API_BASE}/api/v1/users/addresses`, {
     method: "GET",
-    credentials: "include",
   });
 
   if (!res.ok) {
-    throw new Error("Failed to fetch addresses.");
+    const errBody = (await res.json().catch(() => ({}))) as ApiErrorResponse;
+    throw new Error(errBody?.message || "Failed to fetch addresses.");
   }
 
   const data = await res.json();
@@ -271,10 +323,9 @@ export async function getAddresses(): Promise<Address[]> {
 export async function addAddress(
   addressData: Omit<Address, "id">,
 ): Promise<Address> {
-  const res = await fetch(`${API_BASE}/api/v1/users/addresses`, {
+  const res = await fetchAuthApi(`${API_BASE}/api/v1/users/addresses`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    credentials: "include",
     body: JSON.stringify(addressData),
   });
 
@@ -295,10 +346,9 @@ export async function editAddress(
   addressId: string,
   updates: Partial<Address>,
 ): Promise<Address> {
-  const res = await fetch(`${API_BASE}/api/v1/users/addresses/${addressId}`, {
+  const res = await fetchAuthApi(`${API_BASE}/api/v1/users/addresses/${addressId}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    credentials: "include",
     body: JSON.stringify(updates),
   });
 
@@ -316,9 +366,8 @@ export async function editAddress(
  * Calls DELETE /api/v1/users/addresses/:id.
  */
 export async function deleteAddress(addressId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/v1/users/addresses/${addressId}`, {
+  const res = await fetchAuthApi(`${API_BASE}/api/v1/users/addresses/${addressId}`, {
     method: "DELETE",
-    credentials: "include",
   });
 
   if (!res.ok) {
@@ -332,9 +381,8 @@ export async function deleteAddress(addressId: string): Promise<void> {
  * Calls PATCH /api/v1/users/addresses/:id/default.
  */
 export async function setDefaultAddress(addressId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/v1/users/addresses/${addressId}/default`, {
+  const res = await fetchAuthApi(`${API_BASE}/api/v1/users/addresses/${addressId}/default`, {
     method: "PATCH",
-    credentials: "include",
   });
 
   if (!res.ok) {
@@ -635,13 +683,13 @@ export const DEMO_CREDENTIALS = [
     label: "Customer",
     name: "Aarav Mehta",
     identifier: "aarav.mehta@example.com",
-    password: "Demo@1234",
+    password: "Customer@123",
   },
   {
     label: "Admin",
     name: "Admin Superuser",
-    identifier: "admin@my-ecommerce.in",
-    password: "Admin@1234",
+    identifier: "admin@flipstore.in",
+    password: "Admin@123",
   },
 ];
 

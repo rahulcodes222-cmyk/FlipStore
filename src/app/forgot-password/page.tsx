@@ -278,7 +278,7 @@ export default function ForgotPasswordPage() {
               <div className="text-center text-[11px] text-[#878787] pt-1 space-y-1">
                 <p>Demo accounts you can reset:</p>
                 <div className="flex justify-center gap-3">
-                  {["aarav.mehta@example.com", "admin@my-ecommerce.in"].map((e) => (
+                  {["aarav.mehta@example.com", "admin@flipstore.in"].map((e) => (
                     <button
                       key={e}
                       type="button"

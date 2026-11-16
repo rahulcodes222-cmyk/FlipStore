@@ -15,9 +15,13 @@ import {
   editUserAddress,
   deleteUserAddress,
   setUserDefaultAddress,
+  listUsersForAdmin,
+  getUserByIdForAdmin,
 } from '@/backend/services/userService';
 import { withDatabase } from '@/backend/middleware/connectDb';
 import { withAuth } from '@/backend/middleware/auth';
+import { withRole } from '@/backend/middleware/rbac';
+import { USER_ROLES } from '@/backend/constants/roles';
 import {
   updateProfileSchema,
   createAddressSchema,
@@ -503,3 +507,57 @@ export const addressDefaultPatch = withDatabase(withAuth(async (authReq) => {
     );
   }
 }));
+
+
+/**
+ * GET /api/v1/admin/users
+ * List users for admin dashboard (RBAC protected).
+ */
+export const adminUsersGET = withDatabase(withAuth(withRole(USER_ROLES.ADMIN as any)(async (authReq) => {
+  try {
+    const url = new URL(authReq.url);
+    const page = Math.max(1, parseInt(url.searchParams.get('page') || '1', 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '20', 10) || 20));
+    const search = url.searchParams.get('search') || undefined;
+    const role = url.searchParams.get('role') || undefined;
+    const result = await listUsersForAdmin({ page, limit, search, role });
+    return NextResponse.json(
+      createSuccessResponse(result, { message: 'Users retrieved.' }),
+      { status: HTTP_STATUS.OK },
+    );
+  } catch (error: any) {
+    return NextResponse.json(
+      createErrorResponse(error?.message || 'Failed to fetch users.', {
+        statusCode: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        code: 'ADMIN_USERS_FETCH_FAILED',
+      }),
+      { status: HTTP_STATUS.INTERNAL_SERVER_ERROR },
+    );
+  }
+})));
+
+/**
+ * GET /api/v1/admin/users/:id
+ */
+export const adminUserGET = withDatabase(withAuth(withRole(USER_ROLES.ADMIN as any)(async (authReq) => {
+  try {
+    const url = new URL(authReq.url);
+    const parts = url.pathname.split('/').filter(Boolean);
+    const userId = parts[parts.length - 1];
+    if (!userId || !/^[a-f\d]{24}$/i.test(userId)) {
+      return NextResponse.json(
+        createErrorResponse('Invalid user ID.', { statusCode: HTTP_STATUS.BAD_REQUEST, code: 'INVALID_USER_ID' }),
+        { status: HTTP_STATUS.BAD_REQUEST },
+      );
+    }
+    const user = await getUserByIdForAdmin(userId);
+    return NextResponse.json(createSuccessResponse(user, { message: 'User retrieved.' }), { status: HTTP_STATUS.OK });
+  } catch (error: any) {
+    const msg = error?.message || 'Failed to fetch user.';
+    const status = msg.includes('not found') ? HTTP_STATUS.NOT_FOUND : HTTP_STATUS.INTERNAL_SERVER_ERROR;
+    return NextResponse.json(
+      createErrorResponse(msg, { statusCode: status, code: status === HTTP_STATUS.NOT_FOUND ? 'USER_NOT_FOUND' : 'ADMIN_USER_FETCH_FAILED' }),
+      { status },
+    );
+  }
+})));

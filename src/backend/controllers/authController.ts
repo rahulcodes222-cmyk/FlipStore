@@ -81,7 +81,7 @@ export const POST = withDatabase(async (req: NextRequest) => {
   try {
     const { user, tokens } = await registerUser(result.data);
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       createSuccessResponse(
         {
           user: {
@@ -101,6 +101,24 @@ export const POST = withDatabase(async (req: NextRequest) => {
       ),
       { status: HTTP_STATUS.CREATED },
     );
+
+    // Set HTTP-only auth cookies so protected flows (e.g. checkout/payment) work immediately after registration.
+    response.cookies.set('access_token', tokens.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 15 * 60,
+      path: '/',
+    });
+    response.cookies.set('refresh_token', tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60,
+      path: '/',
+    });
+
+    return response;
   } catch (error: unknown) {
     if (error instanceof Error) {
       if (error.message.includes('already exists')) {
@@ -147,7 +165,7 @@ export const vendorRegisterPOST = withDatabase(async (req: NextRequest) => {
   try {
     const { user, tokens } = await registerVendor(result.data);
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       createSuccessResponse(
         {
           user: {
@@ -167,6 +185,24 @@ export const vendorRegisterPOST = withDatabase(async (req: NextRequest) => {
       ),
       { status: HTTP_STATUS.CREATED },
     );
+
+    // Set HTTP-only auth cookies for immediate authenticated session (vendor may be pending approval for vendor-only actions).
+    response.cookies.set('access_token', tokens.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 15 * 60,
+      path: '/',
+    });
+    response.cookies.set('refresh_token', tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60,
+      path: '/',
+    });
+
+    return response;
   } catch (error: unknown) {
     if (error instanceof Error) {
       if (error.message.includes('already exists')) {
@@ -325,13 +361,16 @@ export const refreshPOST = withDatabase(async (req: NextRequest) => {
   try {
     const refreshTokenValue = req.cookies.get('refresh_token')?.value;
     if (!refreshTokenValue) {
-      return NextResponse.json(
-        createErrorResponse('Refresh token required.', {
+      const response = NextResponse.json(
+        createErrorResponse('Refresh token required. Please log in again.', {
           statusCode: HTTP_STATUS.UNAUTHORIZED,
           code: 'REFRESH_TOKEN_REQUIRED',
         }),
         { status: HTTP_STATUS.UNAUTHORIZED },
       );
+      response.cookies.delete('access_token');
+      response.cookies.delete('refresh_token');
+      return response;
     }
 
     const tokens = await refreshToken(refreshTokenValue);
@@ -352,7 +391,6 @@ export const refreshPOST = withDatabase(async (req: NextRequest) => {
       { status: HTTP_STATUS.OK },
     );
 
-    // Set new HTTP-only cookies
     response.cookies.set('access_token', tokens.accessToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
@@ -370,24 +408,18 @@ export const refreshPOST = withDatabase(async (req: NextRequest) => {
 
     return response;
   } catch (error: unknown) {
-    if (error instanceof Error) {
-      if (error.message.includes('Invalid or expired')) {
-        return NextResponse.json(
-          createErrorResponse(error.message, {
-            statusCode: HTTP_STATUS.UNAUTHORIZED,
-            code: 'INVALID_REFRESH_TOKEN',
-          }),
-          { status: HTTP_STATUS.UNAUTHORIZED },
-        );
-      }
-    }
-    return NextResponse.json(
-      createErrorResponse('Token refresh failed.', {
-        statusCode: HTTP_STATUS.INTERNAL_SERVER_ERROR,
-        code: 'REFRESH_FAILED',
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[auth/refreshPOST] Token refresh failed:', error);
+    const response = NextResponse.json(
+      createErrorResponse('Invalid or expired session. Please log in again.', {
+        statusCode: HTTP_STATUS.UNAUTHORIZED,
+        code: 'INVALID_REFRESH_TOKEN',
       }),
-      { status: HTTP_STATUS.INTERNAL_SERVER_ERROR },
+      { status: HTTP_STATUS.UNAUTHORIZED },
     );
+    response.cookies.delete('access_token');
+    response.cookies.delete('refresh_token');
+    return response;
   }
 });
 

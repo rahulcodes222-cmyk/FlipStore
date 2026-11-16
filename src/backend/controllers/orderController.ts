@@ -17,7 +17,7 @@ import {
   updateOrderStatus as updateOrderStatusSvc,
   getInvoice,
 } from '@/backend/services/orderService';
-import { checkoutSummarySchema, createOrderSchema } from '@/backend/validations/checkout.schema';
+import { checkoutSummarySchema, createOrderSchema, validateCouponSchema } from '@/backend/validations/checkout.schema';
 import { cancelOrderSchema, updateOrderStatusSchema } from '@/backend/validations/order.schema';
 
 function toNextRequest(req: AuthenticatedRequest): NextRequest {
@@ -176,6 +176,32 @@ export const orderInvoiceGET = withDatabase(
       return NextResponse.json(createSuccessResponse(invoice, { message: 'Invoice fetched.' }), { status: HTTP_STATUS.OK });
     } catch (error) {
       return serviceError(error, 'Failed to fetch invoice.', 'INVOICE_FETCH_FAILED');
+    }
+  }),
+);
+
+
+export const checkoutCouponValidatePOST = withDatabase(
+  withAuth(async (req: AuthenticatedRequest) => {
+    if (!req.user) return NextResponse.json(createErrorResponse('Authentication required.', { code: 'AUTH_REQUIRED' }), { status: HTTP_STATUS.UNAUTHORIZED });
+    const parsed = await parseBody(toNextRequest(req), validateCouponSchema);
+    if ('error' in parsed) return parsed.error;
+    try {
+      // Validate by computing summary with coupon (uses server-side pricing/DB cart fallback logic)
+      // If cartItems/address not provided, fall back to basic validation path by requiring them in payload from client checkout.
+      const input: any = {
+        cartItems: parsed.data.cartItems || [],
+        shippingAddressId: parsed.data.shippingAddressId || 'placeholder',
+        paymentMethod: 'COD',
+        couponCode: parsed.data.couponCode,
+      };
+      if (!input.cartItems.length || input.shippingAddressId === 'placeholder') {
+        return NextResponse.json(createErrorResponse('Cart items and shipping address are required to validate coupon.', { code: 'VALIDATION_ERROR' }), { status: HTTP_STATUS.UNPROCESSABLE_ENTITY });
+      }
+      const summary = await getCheckoutSummary(req.user.id, input);
+      return NextResponse.json(createSuccessResponse(summary, { message: 'Coupon is valid.' }), { status: HTTP_STATUS.OK });
+    } catch (error) {
+      return serviceError(error, 'Failed to validate coupon.', 'COUPON_VALIDATE_FAILED');
     }
   }),
 );

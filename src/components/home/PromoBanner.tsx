@@ -21,7 +21,7 @@ export function PromoBanner({ banner, className }: PromoBannerProps) {
       {/* Background Image */}
       <div className="absolute inset-0 z-0">
         <Image
-          src={banner.imageUrl}
+          src={banner.imageUrl || "/placeholder-product.svg"}
           alt={banner.title}
           fill
           sizes="(max-width: 768px) 100vw, 1200px"

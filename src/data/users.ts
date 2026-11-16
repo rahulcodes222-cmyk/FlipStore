@@ -42,7 +42,7 @@ export const MOCK_USERS: User[] = [
   {
     id: "usr-admin-demo",
     name: "Admin Superuser",
-    email: "admin@my-ecommerce.in",
+    email: "admin@flipstore.in",
     phone: "+91 99999 88888",
     role: "admin",
     avatar: "https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=200&q=80",

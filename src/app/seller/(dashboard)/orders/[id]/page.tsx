@@ -258,7 +258,7 @@ export default function SellerOrderDetailPage({
                   <div key={i} className="grid grid-cols-12 items-center py-3">
                     <div className="col-span-4 flex items-center gap-3">
                       <div className="w-8 h-8 rounded-sm overflow-hidden border border-[#E0E0E0] flex-shrink-0">
-                        <img src={item.thumbnail} alt="" className="w-full h-full object-cover" />
+                        <img src={item.thumbnail || "/placeholder-product.svg"} alt="" className="w-full h-full object-cover" />
                       </div>
                       <div className="text-sm font-medium text-[#212121]">{item.title}</div>
                     </div>

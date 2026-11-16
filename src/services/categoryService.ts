@@ -8,6 +8,12 @@ import { Category } from "@/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
+function getApiBase(): string {
+  if (API_BASE) return API_BASE.replace(/\/$/, "");
+  if (typeof window !== "undefined") return "";
+  return (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/$/, "");
+}
+
 /**
  * Map backend category document to frontend Category type.
  */
@@ -33,59 +39,46 @@ export const categoryService = {
    * Get all categories.
    */
   async getCategories(): Promise<Category[]> {
-    if (!API_BASE) {
-      // Fallback categories for build time / development without backend
-      return [
-        {
-          id: "1",
-          name: "Electronics",
-          slug: "electronics",
-          description: "Electronic devices and accessories",
-          image: "",
-          icon: "",
-          parentId: null,
-          itemCount: 0,
-          isFeatured: true,
-        },
-        {
-          id: "2",
-          name: "Fashion & Apparel",
-          slug: "fashion-apparel",
-          description: "Clothing and fashion accessories",
-          image: "",
-          icon: "",
-          parentId: null,
-          itemCount: 0,
-          isFeatured: true,
-        },
-        {
-          id: "3",
-          name: "Home & Kitchen",
-          slug: "home-kitchen",
-          description: "Home appliances and kitchen essentials",
-          image: "",
-          icon: "",
-          parentId: null,
-          itemCount: 0,
-          isFeatured: false,
-        },
-      ];
-    }
+    const fallback: Category[] = [
+      { id: "1", name: "Electronics", slug: "electronics", description: "Electronic devices and accessories", image: "", icon: "", parentId: null, itemCount: 0, isFeatured: true },
+      { id: "2", name: "Fashion & Apparel", slug: "fashion-apparel", description: "Clothing and fashion accessories", image: "", icon: "", parentId: null, itemCount: 0, isFeatured: true },
+      { id: "3", name: "Home & Kitchen", slug: "home-kitchen", description: "Home appliances and kitchen essentials", image: "", icon: "", parentId: null, itemCount: 0, isFeatured: false },
+    ];
     try {
-      const res = await fetch(`${API_BASE}/api/v1/categories`, {
+      const res = await fetch(`${getApiBase()}/api/v1/categories`, {
         method: "GET",
         credentials: "include",
+        cache: "no-store",
       });
-
-      if (!res.ok) {
-        return [];
+      if (res.ok) {
+        const data = await res.json().catch(() => ({} as any));
+        const list = (data?.data || []).map(mapBackendCategoryToFrontend);
+        if (list.length) return list;
       }
+    } catch {}
 
-      const data = await res.json();
-      return (data.data || []).map(mapBackendCategoryToFrontend);
-    } catch {
-      return [];
+    // Server-side fallback: direct DB read
+    if (typeof window === "undefined") {
+      try {
+        const { connectDB } = await import("@/backend/config/db");
+        await connectDB();
+        const { CategoryModel } = await import("@/backend/models");
+        const docs = await CategoryModel.find({}).sort({ name: 1 }).lean().exec();
+        const list = (docs || []).map((c: any) => ({
+          id: String(c._id || c.id),
+          name: c.name,
+          slug: c.slug,
+          description: c.description || "",
+          image: c.image || "",
+          icon: c.icon || "",
+          parentId: c.parentId ? String(c.parentId) : null,
+          itemCount: c.itemCount || 0,
+          isFeatured: !!c.isFeatured,
+        })) as Category[];
+        if (list.length) return list;
+      } catch {}
     }
+    return fallback;
   },
 
   /**

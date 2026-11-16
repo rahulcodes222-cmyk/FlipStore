@@ -107,7 +107,7 @@ export default function OrdersPage() {
                 <div key={idx} className="flex gap-4 items-center">
                   <div className="relative w-16 h-16 bg-white border border-gray-100 rounded-xs shrink-0 overflow-hidden">
                     <Image
-                      src={item.thumbnail}
+                      src={item.thumbnail || "/placeholder-product.svg"}
                       alt={item.title}
                       fill
                       sizes="64px"

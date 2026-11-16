@@ -218,7 +218,7 @@ export function AdminOrdersClient() {
                               title={`${item.title} (x${item.quantity})`}
                             >
                               <Image
-                                src={item.thumbnail}
+                                src={item.thumbnail || "/placeholder-product.svg"}
                                 alt={item.title}
                                 fill
                                 className="object-contain p-0.5"
@@ -353,7 +353,7 @@ export function AdminOrdersClient() {
                   <div key={idx} className="p-3 flex items-center gap-3">
                     <div className="relative w-12 h-12 rounded border border-gray-200 bg-white overflow-hidden shrink-0">
                       <Image
-                        src={item.thumbnail}
+                        src={item.thumbnail || "/placeholder-product.svg"}
                         alt={item.title}
                         fill
                         className="object-contain p-1"

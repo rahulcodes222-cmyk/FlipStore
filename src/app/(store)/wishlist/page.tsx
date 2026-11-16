@@ -75,7 +75,7 @@ function WishlistItemCard({
           >
             <div className="relative w-full h-32 sm:h-40">
               <Image
-                src={product.thumbnail || product.images[0]}
+                src={product.thumbnail || product.images[0] || "/placeholder-product.svg"}
                 alt={product.title}
                 fill
                 sizes="(max-width: 640px) 128px, 176px"
@@ -202,7 +202,7 @@ function WishlistItemCard({
         className="relative block w-full aspect-square bg-[#F9F9F9] overflow-hidden"
       >
         <Image
-          src={product.thumbnail || product.images[0]}
+          src={product.thumbnail || product.images[0] || "/placeholder-product.svg"}
           alt={product.title}
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"

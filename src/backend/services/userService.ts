@@ -260,3 +260,89 @@ export async function uploadProfileImage(
 
   return imageUrl;
 }
+
+
+/**
+ * Admin: list users for admin dashboard.
+ * Excludes sensitive fields and supports pagination/search/role filter.
+ */
+export async function listUsersForAdmin(params: {
+  page?: number;
+  limit?: number;
+  search?: string;
+  role?: string;
+} = {}) {
+  const page = Math.max(1, params.page || 1);
+  const limit = Math.min(100, Math.max(1, params.limit || 20));
+  const skip = (page - 1) * limit;
+
+  const query: Record<string, any> = {};
+  if (params.role) {
+    const allowed = ['customer', 'vendor', 'admin', 'super_admin'];
+    if (allowed.includes(params.role)) query.role = params.role;
+  }
+  if (params.search && params.search.trim()) {
+    const sterm = params.search.trim().replace(/[.*+?^$\{\}()|[\]\\]/g, '\\$&');
+    const rx = new RegExp(sterm, 'i');
+    query.$or = [{ name: rx }, { email: rx }, { phone: rx }];
+  }
+
+  const [items, total] = await Promise.all([
+    UserModel.find(query)
+      .select('-passwordHash -emailVerificationToken -emailVerificationExpiresAt -passwordResetToken -passwordResetExpiresAt')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean()
+      .exec(),
+    UserModel.countDocuments(query).exec(),
+  ]);
+
+  const users = items.map((u: any) => ({
+    id: String(u._id || u.id),
+    name: u.name || '',
+    email: u.email || '',
+    phone: u.phone || '',
+    role: u.role || 'customer',
+    avatar: u.avatar || '',
+    addresses: Array.isArray(u.addresses) ? u.addresses : [],
+    defaultAddressId: u.defaultAddressId,
+    isEmailVerified: !!u.isEmailVerified,
+    isPhoneVerified: !!u.isPhoneVerified,
+    isActive: u.isActive !== false,
+    createdAt: u.createdAt ? new Date(u.createdAt).toISOString() : undefined,
+    updatedAt: u.updatedAt ? new Date(u.updatedAt).toISOString() : undefined,
+    vendorApplicationStatus: u.vendorApplicationStatus,
+    isVendorApproved: !!u.isVendorApproved,
+  }));
+
+  return {
+    users,
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1, hasMore: page * limit < total },
+  };
+}
+
+export async function getUserByIdForAdmin(userId: string) {
+  const u: any = await UserModel.findById(userId)
+    .select('-passwordHash -emailVerificationToken -emailVerificationExpiresAt -passwordResetToken -passwordResetExpiresAt')
+    .lean()
+    .exec();
+  if (!u) throw new Error('User not found.');
+  return {
+    id: String(u._id || u.id),
+    name: u.name || '',
+    email: u.email || '',
+    phone: u.phone || '',
+    role: u.role || 'customer',
+    avatar: u.avatar || '',
+    addresses: Array.isArray(u.addresses) ? u.addresses : [],
+    defaultAddressId: u.defaultAddressId,
+    isEmailVerified: !!u.isEmailVerified,
+    isPhoneVerified: !!u.isPhoneVerified,
+    isActive: u.isActive !== false,
+    createdAt: u.createdAt ? new Date(u.createdAt).toISOString() : undefined,
+    updatedAt: u.updatedAt ? new Date(u.updatedAt).toISOString() : undefined,
+    vendorApplicationStatus: u.vendorApplicationStatus,
+    isVendorApproved: !!u.isVendorApproved,
+  };
+}

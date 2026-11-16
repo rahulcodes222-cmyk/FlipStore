@@ -8,6 +8,12 @@ import { Product, ProductFilterParams, PaginatedResponse, Review } from "@/types
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
+function getApiBase(): string {
+  if (API_BASE) return API_BASE.replace(/\/$/, "");
+  if (typeof window !== "undefined") return "";
+  return (process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/$/, "");
+}
+
 /**
  * Map backend product document to frontend Product type.
  */
@@ -65,9 +71,6 @@ export const productService = {
    * Calls GET /api/v1/products.
    */
   async getProducts(filters: ProductFilterParams = {}): Promise<PaginatedResponse<Product>> {
-    if (!API_BASE) {
-      return { data: [], total: 0, page: 1, totalPages: 1, hasMore: false };
-    }
     const params = new URLSearchParams();
     if (filters.search) params.set("search", filters.search);
     if (filters.category) params.set("category", filters.category);
@@ -76,32 +79,91 @@ export const productService = {
     if (filters.maxPrice !== undefined) params.set("maxPrice", String(filters.maxPrice));
     if (filters.minRating !== undefined) params.set("minRating", String(filters.minRating));
     if (filters.minDiscount !== undefined) params.set("minDiscount", String(filters.minDiscount));
+    if (filters.isAssured !== undefined) params.set("isAssured", String(filters.isAssured));
     if (filters.inStock !== undefined) params.set("stock", filters.inStock ? "IN_STOCK" : "OUT_OF_STOCK");
     if (filters.sortBy) params.set("sortBy", filters.sortBy);
     if (filters.page) params.set("page", String(filters.page));
     if (filters.limit) params.set("limit", String(filters.limit));
 
     try {
-      const res = await fetch(`${API_BASE}/api/v1/products?${params.toString()}`, {
+      const res = await fetch(`${getApiBase()}/api/v1/products?${params.toString()}`, {
         method: "GET",
         credentials: "include",
+        cache: "no-store",
       });
-
-      if (!res.ok) {
-        return { data: [], total: 0, page: 1, totalPages: 1, hasMore: false };
+      if (res.ok) {
+        const data = await res.json().catch(() => ({} as any));
+        return {
+          data: (data.data || []).map(mapBackendProductToFrontend),
+          total: data.meta?.total || 0,
+          page: data.meta?.page || 1,
+          totalPages: data.meta?.totalPages || 1,
+          hasMore: data.meta?.hasMore ?? false,
+        };
       }
+    } catch {}
 
-      const data = await res.json();
-      return {
-        data: (data.data || []).map(mapBackendProductToFrontend),
-        total: data.meta?.total || 0,
-        page: data.meta?.page || 1,
-        totalPages: data.meta?.totalPages || 1,
-        hasMore: data.meta?.hasMore ?? false,
-      };
-    } catch {
-      return { data: [], total: 0, page: 1, totalPages: 1, hasMore: false };
+    // Server-side fallback: read directly from DB/service to avoid self-fetch issues in RSC/prerender.
+    if (typeof window === "undefined") {
+      try {
+        const { connectDB } = await import("@/backend/config/db");
+        await connectDB();
+        const { getProducts: getProductsBackend } = await import("@/backend/services/productService");
+        const result = await getProductsBackend({
+          search: filters.search,
+          category: filters.category,
+          brand: filters.brand,
+          status: undefined,
+          stock: filters.inStock === undefined ? undefined : (filters.inStock ? 'IN_STOCK' : 'OUT_OF_STOCK'),
+          sortBy: filters.sortBy as any,
+          page: String(filters.page || 1),
+          limit: String(filters.limit || 20),
+          isAssured: filters.isAssured,
+          minPrice: filters.minPrice,
+          maxPrice: filters.maxPrice,
+          minRating: filters.minRating,
+          minDiscount: filters.minDiscount,
+          inStock: filters.inStock,
+        } as any);
+        return {
+          data: (result.data || []).map((p: any) => mapBackendProductToFrontend({
+            id: p.id || p._id?.toString?.(),
+            name: p.name,
+            slug: p.slug,
+            sku: p.sku,
+            barcode: p.barcode || '',
+            category: p.category,
+            categoryId: p.categoryId?.toString?.() || p.categoryId || '',
+            categorySlug: String(p.category || '').toLowerCase().replace(/\s+/g, '-'),
+            brand: p.brand || '',
+            brandId: p.brandId?.toString?.() || p.brandId || '',
+            description: p.description,
+            shortDescription: p.shortDescription || '',
+            highlights: p.highlights || [],
+            specifications: p.specifications || {},
+            price: p.price,
+            mrp: p.mrp,
+            discountPercentage: p.discountPercentage,
+            rating: p.rating || 0,
+            reviewCount: p.reviewCount || 0,
+            images: p.images || [],
+            stock: p.stock,
+            inStock: (p.stock || 0) > 0,
+            isAssured: !!p.isAssured,
+            isFreeDelivery: !!p.isFreeDelivery,
+            estimatedDeliveryDays: p.estimatedDeliveryDays || 3,
+            sellerId: p.sellerId?.toString?.() || p.sellerId || '',
+            seller: 'Store',
+            createdAt: p.createdAt,
+          })),
+          total: result.total || 0,
+          page: result.page || 1,
+          totalPages: result.totalPages || 1,
+          hasMore: result.hasMore ?? false,
+        };
+      } catch {}
     }
+    return { data: [], total: 0, page: 1, totalPages: 1, hasMore: false };
   },
 
   /**
@@ -109,13 +171,11 @@ export const productService = {
    * Calls GET /api/v1/products/:id.
    */
   async getProductById(id: string): Promise<Product | null> {
-    if (!API_BASE) {
-      return null;
-    }
     try {
-      const res = await fetch(`${API_BASE}/api/v1/products/${id}`, {
+      const res = await fetch(`${getApiBase()}/api/v1/products/${id}`, {
         method: "GET",
         credentials: "include",
+        cache: "no-store",
       });
 
       if (!res.ok) {
@@ -135,15 +195,13 @@ export const productService = {
    * Calls GET /api/v1/products?slug=...
    */
   async getProductBySlug(slug: string): Promise<Product | null> {
-    if (!API_BASE) {
-      return null;
-    }
     try {
       const res = await fetch(
-        `${API_BASE}/api/v1/products?slug=${encodeURIComponent(slug)}`,
+        `${getApiBase()}/api/v1/products?slug=${encodeURIComponent(slug)}`,
         {
           method: "GET",
           credentials: "include",
+          cache: "no-store",
         },
       );
 

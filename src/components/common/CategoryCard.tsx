@@ -27,7 +27,7 @@ export function CategoryCard({
       >
         <div className="relative w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-white p-2 shadow-xs border border-[#E0E0E0] group-hover:border-[#2874F0] group-hover:shadow-md transition-all overflow-hidden flex items-center justify-center">
           <Image
-            src={category.image}
+            src={category.image || "/placeholder-product.svg"}
             alt={category.name}
             fill
             sizes="80px"
@@ -52,7 +52,7 @@ export function CategoryCard({
         )}
       >
         <div className="relative w-5 h-5 rounded-full overflow-hidden shrink-0">
-          <Image src={category.image} alt={category.name} fill sizes="20px" className="object-cover" />
+          <Image src={category.image || "/placeholder-product.svg"} alt={category.name} fill sizes="20px" className="object-cover" />
         </div>
         <span>{category.name}</span>
       </Link>
@@ -70,7 +70,7 @@ export function CategoryCard({
     >
       <div className="relative w-full aspect-4/3 mb-3 bg-gray-50 rounded-xs overflow-hidden flex items-center justify-center">
         <Image
-          src={category.image}
+          src={category.image || "/placeholder-product.svg"}
           alt={category.name}
           fill
           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 25vw, 20vw"

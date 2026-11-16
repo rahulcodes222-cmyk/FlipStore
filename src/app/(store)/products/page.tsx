@@ -6,6 +6,8 @@ import type { ProductFilterParams } from "@/types";
 import { ProductListingClient } from "@/components/products";
 import { Skeleton } from "@/components/common/Skeleton";
 
+export const instant = false;
+
 export const metadata: Metadata = {
   title: "All Products - Buy Online at Best Prices | FlipStore India",
   description:
