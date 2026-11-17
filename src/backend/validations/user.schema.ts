@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Zod Validation Schemas for User Profile and Address Management
  * Shared validation logic for profile updates and address CRUD operations.
  * Uses Zod v4 API.
@@ -34,18 +34,26 @@ const pincodeSchema = z
 
 const landmarkSchema = z.string().trim().optional();
 
+const avatarSchema = z
+  .string()
+  .trim()
+  .max(2048)
+  .refine((v) => !v || /^https?:\/\//i.test(v) || /^\/uploads\//i.test(v) || /^data:image\//i.test(v), 'Invalid avatar URL.')
+  .optional();
+
 /**
  * Address type
  */
 const addressTypeSchema = z.enum(['home', 'work', 'business']);
 
 /**
- * Update Profile Schema (name, email, phone)
+ * Update Profile Schema (name, email, phone, avatar)
  */
 export const updateProfileSchema = z.object({
   name: nameSchema.optional(),
   email: emailSchema.optional(),
   phone: phoneSchema.optional(),
+  avatar: avatarSchema,
 });
 
 /**

@@ -1,4 +1,5 @@
 import React from "react";
+import Link from "next/link";
 import { Store, TrendingUp, ShieldCheck, CheckCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -13,7 +14,7 @@ export default function SellPage() {
           Sell to 50+ Crore Customers on FlipStore
         </h1>
         <p className="text-sm text-[#878787] mt-2 max-w-md mx-auto">
-          Start your seller journey with 0% commission for the first 30 days and 24x7 pan-India logistics.
+          Submit your business details to apply as a seller. Admin will review and approve/reject your request before dashboard access is enabled.
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 my-8 text-left">
@@ -24,19 +25,28 @@ export default function SellPage() {
           </div>
           <div className="p-4 bg-[#F9FAFB] border border-[#F0F0F0] rounded-xs">
             <CheckCircle size={20} className="text-[#388E3C] mb-2" />
-            <h4 className="font-bold text-sm text-[#212121]">Fast 7-Day Payments</h4>
-            <p className="text-xs text-[#878787] mt-1">Get timely deposits directly into your bank account.</p>
+            <h4 className="font-bold text-sm text-[#212121]">Approval-Based Access</h4>
+            <p className="text-xs text-[#878787] mt-1">Fill details, submit application, and get admin approval.</p>
           </div>
           <div className="p-4 bg-[#F9FAFB] border border-[#F0F0F0] rounded-xs">
             <ShieldCheck size={20} className="text-[#FB641B] mb-2" />
-            <h4 className="font-bold text-sm text-[#212121]">FlipStore Fulfilled</h4>
-            <p className="text-xs text-[#878787] mt-1">Store, pack & ship products with our logistics network.</p>
+            <h4 className="font-bold text-sm text-[#212121]">Secure Onboarding</h4>
+            <p className="text-xs text-[#878787] mt-1">Business, address, and bank details are reviewed by admin.</p>
           </div>
         </div>
 
-        <Button variant="buyNow" size="lg" className="w-full sm:w-auto">
-          Start Selling Today
-        </Button>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <Link href="/seller/register">
+            <Button variant="buyNow" size="lg" className="w-full sm:w-auto">
+              Apply to Become a Seller
+            </Button>
+          </Link>
+          <Link href="/seller/login">
+            <Button variant="outline" size="lg" className="w-full sm:w-auto">
+              Seller Login
+            </Button>
+          </Link>
+        </div>
       </div>
     </div>
   );

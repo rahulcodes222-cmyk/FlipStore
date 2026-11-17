@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Vendor Commerce Service (Part 12)
  * Vendor-scoped product, inventory, order, customer operations.
  * All seller identity is derived from authenticated vendor session.
@@ -15,6 +15,7 @@ import {
 } from '@/backend/models';
 import InventoryMovementModel from '@/backend/models/InventoryMovement';
 import { generateSlug } from '@/backend/utils/slug';
+import mongoose from 'mongoose';
 import type { VendorCreateProductInput, VendorUpdateProductInput } from '@/backend/validations/vendorCommerce.schema';
 
 function toId(v: any): string {
@@ -180,6 +181,14 @@ function toVendorProduct(product: any) {
   };
 }
 
+function assertValidProductId(productId: string) {
+  const id = String(productId || '').trim();
+  if (!id || id === 'undefined' || id === 'null' || !mongoose.isValidObjectId(id)) {
+    throw new Error('Invalid product ID.');
+  }
+  return id;
+}
+
 function assertOwned(product: any, sellerId: string) {
   if (!product) throw new Error('Product not found.');
   if (toId(product.sellerId) !== toId(sellerId)) throw new Error('Forbidden');
@@ -217,7 +226,8 @@ export async function listVendorProducts(sellerId: string, query: any) {
 }
 
 export async function getVendorProductById(sellerId: string, productId: string) {
-  const product = await ProductModel.findById(productId).exec();
+  const id = assertValidProductId(productId);
+  const product = await ProductModel.findById(id).exec();
   assertOwned(product, sellerId);
   return toVendorProduct(product);
 }
@@ -240,11 +250,23 @@ export async function createVendorProduct(sellerId: string, actorId: string, inp
   const price = Number(input.price);
   if (price > mrp) throw new Error('Selling price cannot exceed MRP.');
   const requestedStatus = input.status || 'DRAFT';
-  let status: any = 'DRAFT';
+  let status: any = stock === 0 ? 'OUT_OF_STOCK' : 'DRAFT';
   let approvalSubmissionStatus = 'DRAFT';
   let archived = false;
-  if (requestedStatus === 'PUBLISHED' || requestedStatus === 'PENDING_APPROVAL') { status = 'DRAFT'; approvalSubmissionStatus = 'PENDING_APPROVAL'; }
-  if (requestedStatus === 'ARCHIVED') { archived = true; approvalSubmissionStatus = 'ARCHIVED'; }
+  if (requestedStatus === 'PUBLISHED' || requestedStatus === 'PENDING_APPROVAL') {
+    status = stock === 0 ? 'OUT_OF_STOCK' : 'DRAFT';
+    approvalSubmissionStatus = 'PENDING_APPROVAL';
+  } else if (requestedStatus === 'ARCHIVED') {
+    archived = true;
+    approvalSubmissionStatus = 'ARCHIVED';
+    status = 'DRAFT';
+  } else if (requestedStatus === 'OUT_OF_STOCK') {
+    status = 'OUT_OF_STOCK';
+    approvalSubmissionStatus = 'DRAFT';
+  } else {
+    status = stock === 0 ? 'OUT_OF_STOCK' : 'DRAFT';
+    approvalSubmissionStatus = 'DRAFT';
+  }
 
   const product: any = await ProductModel.create({
     sellerId, name: input.name.trim(), slug, sku, barcode: input.barcode || '', category: input.category,
@@ -263,12 +285,13 @@ export async function createVendorProduct(sellerId: string, actorId: string, inp
 }
 
 export async function updateVendorProduct(sellerId: string, actorId: string, productId: string, input: VendorUpdateProductInput) {
+  const id = assertValidProductId(productId);
   const product: any = await ProductModel.findById(productId).exec();
   assertOwned(product, sellerId);
 
   if (input.name !== undefined) product.name = input.name.trim();
-  if (input.slug !== undefined || input.name !== undefined) product.slug = await ensureUniqueProductSlug(input.slug || product.name, sellerId, productId);
-  if (input.sku !== undefined) product.sku = await ensureUniqueSku(input.sku, sellerId, productId);
+  if (input.slug !== undefined || input.name !== undefined) product.slug = await ensureUniqueProductSlug(input.slug || product.name, sellerId, id);
+  if (input.sku !== undefined) product.sku = await ensureUniqueSku(input.sku, sellerId, id);
   if (input.barcode !== undefined) product.barcode = input.barcode || '';
   if (input.category !== undefined) product.category = input.category;
   if (input.categoryId !== undefined) product.categoryId = input.categoryId || undefined;
@@ -297,7 +320,7 @@ export async function updateVendorProduct(sellerId: string, actorId: string, pro
       const vs = String(v.sku).toUpperCase();
       if (seen.has(vs)) throw new Error(`Duplicate SKU: ${vs}`);
       seen.add(vs);
-      await ensureUniqueSku(vs, sellerId, productId);
+      await ensureUniqueSku(vs, sellerId, id);
     }
     product.variants = variants;
   }
@@ -306,9 +329,25 @@ export async function updateVendorProduct(sellerId: string, actorId: string, pro
   product.stock = effectiveStock;
 
   const requestedStatus = input.status;
-  if (requestedStatus === 'ARCHIVED') { (product as any).archived = true; (product as any).approvalSubmissionStatus = 'ARCHIVED'; if (product.status !== 'PUBLISHED') product.status = 'DRAFT'; else product.status = 'DRAFT'; }
-  else if (requestedStatus === 'PENDING_APPROVAL' || requestedStatus === 'PUBLISHED') { (product as any).archived = false; (product as any).approvalSubmissionStatus = 'PENDING_APPROVAL'; if (product.status !== 'PUBLISHED') product.status = 'DRAFT'; }
-  else if (requestedStatus === 'DRAFT') { (product as any).archived = false; (product as any).approvalSubmissionStatus = 'DRAFT'; if (product.status !== 'PUBLISHED') product.status = 'DRAFT'; }
+  if (requestedStatus === 'ARCHIVED') {
+    (product as any).archived = true;
+    (product as any).approvalSubmissionStatus = 'ARCHIVED';
+    product.status = 'DRAFT';
+  } else if (requestedStatus === 'PENDING_APPROVAL' || requestedStatus === 'PUBLISHED') {
+    (product as any).archived = false;
+    (product as any).approvalSubmissionStatus = 'PENDING_APPROVAL';
+    if (product.status !== 'PUBLISHED') product.status = effectiveStock === 0 ? 'OUT_OF_STOCK' : 'DRAFT';
+  } else if (requestedStatus === 'OUT_OF_STOCK') {
+    (product as any).archived = false;
+    (product as any).approvalSubmissionStatus = 'DRAFT';
+    if (product.status !== 'PUBLISHED') product.status = 'OUT_OF_STOCK';
+  } else if (requestedStatus === 'DRAFT') {
+    (product as any).archived = false;
+    (product as any).approvalSubmissionStatus = 'DRAFT';
+    if (product.status !== 'PUBLISHED') product.status = effectiveStock === 0 ? 'OUT_OF_STOCK' : 'DRAFT';
+  } else if (product.status !== 'PUBLISHED') {
+    product.status = effectiveStock === 0 ? 'OUT_OF_STOCK' : (product.status === 'OUT_OF_STOCK' ? 'DRAFT' : product.status);
+  }
 
   if (input.seoTitle !== undefined) product.seoTitle = input.seoTitle || '';
   if (input.seoDescription !== undefined) product.seoDescription = input.seoDescription || '';
@@ -321,16 +360,18 @@ export async function updateVendorProduct(sellerId: string, actorId: string, pro
 }
 
 export async function archiveVendorProduct(sellerId: string, productId: string) {
+  const id = assertValidProductId(productId);
   const product: any = await ProductModel.findById(productId).exec();
   assertOwned(product, sellerId);
   (product as any).archived = true;
   (product as any).approvalSubmissionStatus = 'ARCHIVED';
   if (product.status !== 'PUBLISHED') product.status = 'DRAFT'; else product.status = 'DRAFT';
   await product.save();
-  return { id: productId, status: 'ARCHIVED' };
+  return { id, status: 'ARCHIVED' };
 }
 
 export async function submitVendorProductForApproval(sellerId: string, productId: string) {
+  const id = assertValidProductId(productId);
   const product: any = await ProductModel.findById(productId).exec();
   assertOwned(product, sellerId);
   (product as any).archived = false;
@@ -394,6 +435,7 @@ export async function listVendorInventory(sellerId: string, query: any) {
 }
 
 export async function updateVendorInventory(sellerId: string, actorId: string, productId: string, input: { stock?: number; delta?: number; lowStockThreshold?: number; variantId?: string; sku?: string; reason?: string }) {
+  const id = assertValidProductId(productId);
   const product: any = await ProductModel.findById(productId).exec();
   assertOwned(product, sellerId);
   const variants = Array.isArray(product.variants) ? product.variants : [];
@@ -540,3 +582,5 @@ export async function listVendorCustomers(sellerId: string, query: any) {
   const total = data.length;
   return { data: data.slice((page - 1) * limit, page * limit), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 } };
 }
+
+

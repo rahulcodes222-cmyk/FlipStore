@@ -380,6 +380,34 @@ export const adminService = {
     } as unknown as Order;
   },
 
+  // ── Seller/Vendor Applications (DB-backed via admin API) ─────────────────────
+  async getVendors(params?: { status?: string; search?: string; page?: number; limit?: number }) {
+    const sp = new URLSearchParams();
+    if (params?.status) sp.set("status", params.status);
+    if (params?.search?.trim()) sp.set("search", params.search.trim());
+    sp.set("page", String(params?.page || 1));
+    sp.set("limit", String(params?.limit || 50));
+    const res = await adminFetch(`${API_BASE}/api/v1/admin/vendors?${sp.toString()}`, { method: "GET" });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || body?.error?.message || "Failed to fetch seller applications.");
+    }
+    return body?.data || { vendors: [], pagination: { page: 1, limit: 50, total: 0, totalPages: 1 } };
+  },
+
+  async updateVendorStatus(id: string, status: string, opts?: { reason?: string; note?: string }) {
+    const res = await adminFetch(`${API_BASE}/api/v1/admin/vendors/${encodeURIComponent(id)}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, ...(opts?.reason ? { reason: opts.reason } : {}), ...(opts?.note ? { note: opts.note } : {}) }),
+    });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || body?.error?.message || "Failed to update seller status.");
+    }
+    return body?.data;
+  },
+
   // ── Customers (DB-backed via admin API) ─────────────────────────────────────
   async getCustomers(query?: string): Promise<User[]> {
     const sp = new URLSearchParams();

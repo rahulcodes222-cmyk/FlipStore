@@ -1,4 +1,4 @@
-/**
+﻿/**
  * User Service
  * Business logic for customer profile and address management.
  * Keeps business logic separate from API route handlers.
@@ -58,9 +58,10 @@ export async function updateUserProfile(
   }
 
   // Apply updates
-  if (data.name) user.name = data.name;
-  if (data.email) user.email = data.email.toLowerCase();
-  if (data.phone) user.phone = data.phone;
+  if (data.name !== undefined) user.name = data.name;
+  if (data.email !== undefined) user.email = data.email.toLowerCase();
+  if (data.phone !== undefined) user.phone = data.phone;
+  if ((data as any).avatar !== undefined) (user as any).avatar = (data as any).avatar;
 
   const updated = await user.save();
   return updated;
@@ -99,8 +100,7 @@ export async function addUserAddress(
     });
   }
 
-  const newAddress: IAddressDocument = {
-    _id: addressId,
+  const newAddress = {
     id: addressId,
     userId,
     name: addressData.name,
@@ -113,10 +113,10 @@ export async function addUserAddress(
     state: addressData.state,
     landmark: addressData.landmark,
     type: addressData.type,
-    isDefault: addressData.isDefault,
+    isDefault: addressData.isDefault ?? false,
     createdAt: new Date(),
     updatedAt: new Date(),
-  };
+  } as IAddressDocument;
 
   user.addresses.push(newAddress);
   await user.save();
@@ -187,6 +187,7 @@ export async function deleteUserAddress(
   }
 
   const initialLength = user.addresses.length;
+  const deletedAddress = user.addresses.find((addr) => addr.id === addressId);
   user.addresses = user.addresses.filter((addr) => addr.id !== addressId);
 
   if (user.addresses.length === initialLength) {
@@ -194,8 +195,7 @@ export async function deleteUserAddress(
   }
 
   // If the deleted address was default, set another as default if any exist
-  const wasDefault = user.addresses.some((addr) => addr.id === addressId && addr.isDefault);
-  if (wasDefault && user.addresses.length > 0) {
+  if (deletedAddress?.isDefault && user.addresses.length > 0) {
     user.addresses[0].isDefault = true;
   }
 
@@ -346,3 +346,4 @@ export async function getUserByIdForAdmin(userId: string) {
     isVendorApproved: !!u.isVendorApproved,
   };
 }
+

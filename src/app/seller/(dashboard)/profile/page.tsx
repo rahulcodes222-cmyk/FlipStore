@@ -1,52 +1,72 @@
-"use client";
+﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { Upload, User } from "lucide-react";
 import { useHydration } from "@/hooks/useHydration";
 import { useSellerStore } from "@/store/useSellerStore";
 import { sellerProfileService } from "@/services";
 import type { Seller } from "@/types";
 import { SellerProfileCard } from "@/components/seller/SellerProfileCard";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+
+function DetailRow({ label, value }: { label: string; value?: string | number | null }) {
+  if (value === undefined || value === null || value === "") return null;
+  return (
+    <div className="flex items-start justify-between gap-4 py-2 border-b border-[#F5F5F5] last:border-b-0">
+      <span className="text-xs font-medium text-[#878787]">{label}</span>
+      <span className="text-xs text-[#212121] text-right break-all">{String(value)}</span>
+    </div>
+  );
+}
 
 export default function SellerProfilePage() {
   const isHydrated = useHydration();
   const { seller, updateSeller } = useSellerStore();
-  const router = useRouter();
   const currentSeller = isHydrated ? seller : null;
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const [sellerData, setSellerData] = useState<Seller | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
   const [form, setForm] = useState({
     name: "",
     email: "",
     phone: "",
     storeName: "",
     storeDescription: "",
+    businessEmail: "",
+    businessPhone: "",
   });
-  const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState("");
 
   useEffect(() => {
     let mounted = true;
     const load = async () => {
       setLoading(true);
+      setError("");
       try {
         const data = await sellerProfileService.getSellerProfile();
         if (mounted) {
-          setSellerData(data || currentSeller || null);
+          const merged = data || currentSeller || null;
+          setSellerData(merged);
           setForm({
-            name: data?.name || currentSeller?.name || "",
-            email: data?.email || currentSeller?.email || "",
-            phone: data?.phone || currentSeller?.phone || "",
-            storeName: data?.storeName || currentSeller?.storeName || "",
-            storeDescription: data?.storeDescription || currentSeller?.storeDescription || "",
+            name: merged?.name || "",
+            email: merged?.email || "",
+            phone: merged?.phone || "",
+            storeName: merged?.storeName || "",
+            storeDescription: merged?.storeDescription || "",
+            businessEmail: (merged as any)?.businessEmail || merged?.email || "",
+            businessPhone: (merged as any)?.businessPhone || merged?.phone || "",
           });
         }
-      } catch {
-        if (mounted) setSellerData(currentSeller || null);
+      } catch (err: any) {
+        if (mounted) {
+          setSellerData(currentSeller || null);
+          setError(err?.message || "Failed to load seller profile.");
+        }
       } finally {
         if (mounted) setLoading(false);
       }
@@ -58,11 +78,37 @@ export default function SellerProfilePage() {
   }, [currentSeller]);
 
   const sellerProfile = sellerData || currentSeller;
+  const details = (sellerProfile as any) || {};
+  const bank = details.bankDetails || details.bank || null;
+  const business = details.businessDetails || {};
+  const address = details.address || details.businessAddress || business.address || null;
+  const docs = Array.isArray(details.documents) ? details.documents : [];
+
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingAvatar(true);
+    setMessage("");
+    setError("");
+    try {
+      const url = await sellerProfileService.uploadProfileImage(file);
+      const updated = await sellerProfileService.updateAvatar(url);
+      setSellerData(updated);
+      updateSeller(updated);
+      setMessage("Profile image updated successfully.");
+    } catch (err: any) {
+      setError(err?.message || "Failed to upload profile image.");
+    } finally {
+      setUploadingAvatar(false);
+      e.target.value = "";
+    }
+  };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setMessage("");
+    setError("");
     try {
       const updated = await sellerProfileService.updateProfile({
         name: form.name,
@@ -70,13 +116,15 @@ export default function SellerProfilePage() {
         phone: form.phone,
         storeName: form.storeName,
         storeDescription: form.storeDescription,
-      });
+        businessEmail: form.businessEmail,
+        businessPhone: form.businessPhone,
+      } as any);
       updateSeller(updated);
       setSellerData(updated);
       setEditing(false);
       setMessage("Profile updated successfully.");
     } catch (err: any) {
-      setMessage(err.message || "Update failed.");
+      setError(err?.message || "Update failed.");
     } finally {
       setSaving(false);
     }
@@ -87,103 +135,129 @@ export default function SellerProfilePage() {
       <div className="p-4 sm:p-6">
         <h1 className="text-lg font-bold text-[#212121]">Seller Profile</h1>
         <div className="h-64 rounded-sm bg-[#E8E8E8] animate-skeleton mt-4" />
+        {error && <div className="mt-4 rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
       </div>
     );
   }
+
+  const avatar = (sellerProfile as any).avatar || (sellerProfile as any).storeLogo || "";
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h1 className="text-lg font-bold text-[#212121]">Seller Profile</h1>
-        <Link
-          href="/seller/dashboard"
-          className="text-[11px] font-semibold text-[#2874F0] hover:underline flex items-center gap-1"
-        >
+        <Link href="/seller/dashboard" className="text-[11px] font-semibold text-[#2874F0] hover:underline flex items-center gap-1">
           <span>← Back to Dashboard</span>
         </Link>
       </div>
 
+      <div className="rounded-sm border border-[#E0E0E0] bg-white p-5 shadow-sm">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+          <div className="relative w-20 h-20 rounded-full bg-[#eaf2ff] border border-[#E0E0E0] overflow-hidden flex items-center justify-center">
+            {avatar ? <img src={avatar} alt="Profile" className="w-full h-full object-cover" /> : <User size={28} className="text-[#2874F0]" />}
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-sm font-bold text-[#212121]">{sellerProfile.name || sellerProfile.storeName || "Seller"}</h2>
+            <p className="text-xs text-[#878787]">Upload your profile image to Cloudinary (stored as image URL in your account).</p>
+            <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,image/avif" className="hidden" onChange={handleAvatarUpload} />
+            <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} isLoading={uploadingAvatar} leftIcon={<Upload size={14} />} className="w-auto h-8 text-xs">
+              {uploadingAvatar ? "Uploading..." : "Change Profile Image"}
+            </Button>
+          </div>
+        </div>
+      </div>
+
       <SellerProfileCard seller={sellerProfile} />
+
+      {message && <div className="rounded-sm bg-[#E8F5E9] px-3 py-2 text-xs text-[#2E7D32] border border-[#C8E6C9]">{message}</div>}
+      {error && <div className="rounded-sm border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</div>}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="rounded-sm border border-[#E0E0E0] bg-white p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-bold text-[#212121]">Profile & Store Contact</h2>
+            {!editing && <Button variant="outline" onClick={() => setEditing(true)} className="w-auto h-8 text-xs">Edit</Button>}
+          </div>
           {editing ? (
             <form onSubmit={handleSave} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Full Name</label>
-                <input
-                  {...{ value: form.name, onChange: (e) => setForm({ ...form, name: e.target.value }) }}
-                  className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Email</label>
-                <input
-                  {...{ value: form.email, onChange: (e) => setForm({ ...form, email: e.target.value }) }}
-                  className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Mobile</label>
-                <input
-                  {...{ value: form.phone, onChange: (e) => setForm({ ...form, phone: e.target.value }) }}
-                  className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Store Name</label>
-                <input
-                  {...{ value: form.storeName, onChange: (e) => setForm({ ...form, storeName: e.target.value }) }}
-                  className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Store Description</label>
-                <textarea
-                  {...{ value: form.storeDescription, onChange: (e) => setForm({ ...form, storeDescription: e.target.value }) }}
-                  rows={3}
-                  className="flex h-24 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]"
-                />
-              </div>
-              {message && (
-                <p className="text-xs text-[#2E7D32] bg-[#E8F5E9] px-2 py-1 rounded-sm">{message}</p>
-              )}
+              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Full Name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]" /></div>
+              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Email</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]" /></div>
+              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Mobile</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]" /></div>
+              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Store Name</label><input value={form.storeName} onChange={(e) => setForm({ ...form, storeName: e.target.value })} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]" /></div>
+              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Store Description</label><textarea value={form.storeDescription} onChange={(e) => setForm({ ...form, storeDescription: e.target.value })} rows={3} className="flex w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]" /></div>
+              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Business Email</label><input value={form.businessEmail} onChange={(e) => setForm({ ...form, businessEmail: e.target.value })} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]" /></div>
+              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Business Phone</label><input value={form.businessPhone} onChange={(e) => setForm({ ...form, businessPhone: e.target.value })} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]" /></div>
               <div className="flex gap-2">
-                <Button type="submit" variant="primary" isLoading={saving} className="w-auto">
-                  Save Changes
-                </Button>
-                <Button variant="outline" onClick={() => setEditing(false)} className="w-auto">
-                  Cancel
-                </Button>
+                <Button type="submit" variant="primary" isLoading={saving} className="w-auto">Save Changes</Button>
+                <Button type="button" variant="outline" onClick={() => setEditing(false)} className="w-auto">Cancel</Button>
               </div>
             </form>
           ) : (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-[#212121]">Seller ID</span>
-                <span className="text-sm text-[#878787]">{sellerProfile.sellerId}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-[#212121]">Registration Date</span>
-                <span className="text-sm text-[#878787]">
-                  {new Date(sellerProfile.joinedAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-[#212121]">Verification Status</span>
-                <span className="text-sm font-medium">
-                  {sellerProfile.verificationStatus.charAt(0) + sellerProfile.verificationStatus.slice(1).toLowerCase()}
-                </span>
-              </div>
-              <div className="flex items-center justify-between pt-3 border-t border-[#F0F0F0]">
-                <span className="text-sm text-[#212121]">Role</span>
-                <span className="text-sm text-[#878787]">Seller</span>
-              </div>
-              <Button variant="outline" onClick={() => setEditing(true)} className="w-full mt-4">
-                Edit Profile
-              </Button>
+            <div>
+              <DetailRow label="Seller ID" value={sellerProfile.sellerId || (sellerProfile as any).id} />
+              <DetailRow label="Name" value={sellerProfile.name} />
+              <DetailRow label="Email" value={sellerProfile.email} />
+              <DetailRow label="Phone" value={sellerProfile.phone} />
+              <DetailRow label="Store Name" value={sellerProfile.storeName} />
+              <DetailRow label="Store Slug" value={sellerProfile.storeSlug} />
+              <DetailRow label="Store Description" value={sellerProfile.storeDescription} />
+              <DetailRow label="Business Email" value={(sellerProfile as any).businessEmail} />
+              <DetailRow label="Business Phone" value={(sellerProfile as any).businessPhone} />
+              <DetailRow label="Joined" value={sellerProfile.joinedAt ? new Date(sellerProfile.joinedAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : undefined} />
+              <DetailRow label="Application Status" value={(details.applicationStatus || sellerProfile.verificationStatus) as any} />
             </div>
           )}
+        </div>
+
+        <div className="space-y-6">
+          <div className="rounded-sm border border-[#E0E0E0] bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-bold text-[#212121] mb-4">Registration & Business Details</h2>
+            <DetailRow label="Business Name" value={business.businessName || details.businessName} />
+            <DetailRow label="Business Type" value={sellerProfile.businessType || business.businessType} />
+            <DetailRow label="Business Category" value={sellerProfile.businessCategory || business.category} />
+            <DetailRow label="GST Number" value={sellerProfile.gstNumber || details.gstNumber} />
+            <DetailRow label="PAN Number" value={sellerProfile.panNumber || details.panNumber} />
+            {address && (
+              <div className="py-2 border-b border-[#F5F5F5]">
+                <span className="text-xs font-medium text-[#878787] block mb-1">Business Address</span>
+                <span className="text-xs text-[#212121]">
+                  {[address.addressLine1 || address.houseNumber, address.addressLine2 || address.street, address.landmark, address.city, address.state, address.pincode].filter(Boolean).join(", ")}
+                </span>
+              </div>
+            )}
+            {bank && (
+              <>
+                <DetailRow label="Account Holder" value={bank.accountHolderName} />
+                <DetailRow label="Bank Name" value={bank.bankName} />
+                <DetailRow label="Account" value={bank.accountNumberMasked || (bank.accountLast4 ? `****${bank.accountLast4}` : undefined)} />
+                <DetailRow label="IFSC" value={bank.ifscCode} />
+              </>
+            )}
+            {!business.businessName && !sellerProfile.gstNumber && !sellerProfile.panNumber && !address && !bank && (
+              <p className="text-xs text-[#878787]">Registration details will appear here once available from your seller application.</p>
+            )}
+          </div>
+
+          <div className="rounded-sm border border-[#E0E0E0] bg-white p-5 shadow-sm">
+            <h2 className="text-sm font-bold text-[#212121] mb-4">Documents</h2>
+            {docs.length === 0 ? (
+              <p className="text-xs text-[#878787]">No uploaded documents found.</p>
+            ) : (
+              <div className="space-y-2">
+                {docs.map((doc: any, i: number) => (
+                  <div key={doc.id || i} className="flex items-center justify-between gap-3 py-2 border-b border-[#F5F5F5] last:border-b-0">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-[#212121] truncate">{doc.type || "Document"}</p>
+                      <p className="text-[11px] text-[#878787] truncate">{doc.fileName || doc.fileUrl || "—"}</p>
+                    </div>
+                    {doc.fileUrl && (
+                      <a href={doc.fileUrl} target="_blank" rel="noreferrer" className="text-[11px] font-semibold text-[#2874F0] hover:underline shrink-0">View</a>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

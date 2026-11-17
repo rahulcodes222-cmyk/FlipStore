@@ -276,63 +276,53 @@ export function CustomerDashboardClient() {
       isDefault: addresses.length === 0 && !editingAddressId,
     };
 
-    if (editingAddressId) {
-      try {
+    try {
+      if (editingAddressId) {
         await authService.editAddress(editingAddressId, addressPayload);
         toast({ type: "success", message: "Address updated successfully" });
-        setIsAddressModalOpen(false);
-        // Refresh addresses from backend
-        const updated = await authService.getAddresses();
-        setAddresses(updated);
-        updateUser({ addresses: updated });
-      } catch {
-        toast({ type: "error", message: "Failed to update address. Please try again." });
-      }
-    } else {
-      try {
-        const created = await authService.addAddress(addressPayload);
+      } else {
+        await authService.addAddress(addressPayload);
         toast({ type: "success", message: "New address added to your address book" });
-        setIsAddressModalOpen(false);
-        // Refresh addresses from backend
-        const updated = await authService.getAddresses();
-        setAddresses(updated);
-        updateUser({ addresses: updated });
-      } catch {
-        toast({ type: "error", message: "Failed to add address. Please try again." });
       }
+      setIsAddressModalOpen(false);
+      const updated = await authService.getAddresses();
+      setAddresses(updated);
+      updateUser({ addresses: updated });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to save address. Please try again.";
+      toast({ type: "error", message });
     }
   };
 
-  const handleDeleteAddress = (id: string) => {
+  const handleDeleteAddress = async (id: string) => {
     if (addresses.length <= 1) {
       toast({ type: "error", message: "You must keep at least one saved address" });
       return;
     }
-    if (window.confirm("Are you sure you want to delete this address?")) {
-      try {
-        authService.deleteAddress(id);
-        const updated = addresses.filter((a) => a.id !== id);
-        setAddresses(updated);
-        updateUser({ addresses: updated });
-        toast({ type: "info", message: "Address removed from saved list" });
-      } catch {
-        toast({ type: "error", message: "Failed to delete address. Please try again." });
-      }
+    if (!window.confirm("Are you sure you want to delete this address?")) return;
+    try {
+      await authService.deleteAddress(id);
+      const updated = await authService.getAddresses();
+      setAddresses(updated);
+      updateUser({ addresses: updated });
+      toast({ type: "info", message: "Address removed from saved list" });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to delete address. Please try again.";
+      toast({ type: "error", message });
     }
   };
 
-  const handleSetDefaultAddress = (id: string) => {
+  const handleSetDefaultAddress = async (id: string) => {
     try {
-      authService.setDefaultAddress(id);
-      const updated = addresses.map((a) => ({
-        ...a,
-        isDefault: a.id === id,
-      }));
+      await authService.setDefaultAddress(id);
+      const updated = await authService.getAddresses();
       setAddresses(updated);
-      updateUser({ addresses: updated, defaultAddressId: id });
+      const defaultAddr = updated.find((a) => a.isDefault);
+      updateUser({ addresses: updated, defaultAddressId: defaultAddr?.id });
       toast({ type: "success", message: "Default delivery address updated" });
-    } catch {
-      toast({ type: "error", message: "Failed to set default address. Please try again." });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to set default address. Please try again.";
+      toast({ type: "error", message });
     }
   };
 

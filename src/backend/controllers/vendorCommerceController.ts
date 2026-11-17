@@ -57,6 +57,7 @@ function parseQuery<T extends z.ZodTypeAny>(req: NextRequest, schema: T): { data
 function err(error: unknown, fallback: string): NextResponse {
   const message = error instanceof Error ? error.message : fallback;
   const lower = message.toLowerCase();
+  if (lower.includes('cast to objectid') || lower.includes('invalid product id')) return NextResponse.json(createErrorResponse('Invalid product ID.', { statusCode: HTTP_STATUS.BAD_REQUEST, code: 'INVALID_PRODUCT_ID' }), { status: HTTP_STATUS.BAD_REQUEST });
   const status = /forbidden/.test(lower) ? HTTP_STATUS.FORBIDDEN : /not found/.test(lower) ? HTTP_STATUS.NOT_FOUND : /invalid|cannot|already|negative|required|duplicate|exceed|not permitted|variant/.test(lower) ? HTTP_STATUS.BAD_REQUEST : HTTP_STATUS.INTERNAL_SERVER_ERROR;
   const code = status === HTTP_STATUS.FORBIDDEN ? 'FORBIDDEN' : status === HTTP_STATUS.NOT_FOUND ? 'NOT_FOUND' : status === HTTP_STATUS.BAD_REQUEST ? 'VALIDATION_ERROR' : 'VENDOR_ERROR';
   return NextResponse.json(createErrorResponse(message, { statusCode: status, code }), { status });
@@ -173,3 +174,4 @@ export const vendorReturnPATCH = withDatabase(withApprovedVendor(async (req: App
   try { return NextResponse.json(createSuccessResponse(await updateReturnRequest(req.user!.id, req.user!.role, id, parsed.data), { message: 'Return updated.' })); }
   catch (error) { return err(error, 'Failed to update return.'); }
 }));
+

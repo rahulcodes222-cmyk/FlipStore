@@ -91,20 +91,21 @@ export default function SellerRegisterPage() {
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
-  const form1 = useForm<Step1>({ resolver: zodResolver(step1Schema), defaultValues: EMPTY_REGISTER_PAYLOAD.step1 });
-  const form2 = useForm<Step2>({ resolver: zodResolver(step2Schema), defaultValues: EMPTY_REGISTER_PAYLOAD.step2 });
-  const form3 = useForm<Step3>({ resolver: zodResolver(step3Schema), defaultValues: EMPTY_REGISTER_PAYLOAD.step3 });
-  const form4 = useForm<Step4>({ resolver: zodResolver(step4Schema), defaultValues: EMPTY_REGISTER_PAYLOAD.step4 });
-  const form5 = useForm<Step5>({ resolver: zodResolver(step5Schema), defaultValues: EMPTY_REGISTER_PAYLOAD.step5 });
+  const form1 = useForm<Step1>({ resolver: zodResolver(step1Schema), mode: "onBlur", defaultValues: EMPTY_REGISTER_PAYLOAD.step1 });
+  const form2 = useForm<Step2>({ resolver: zodResolver(step2Schema), mode: "onBlur", defaultValues: EMPTY_REGISTER_PAYLOAD.step2 });
+  const form3 = useForm<Step3>({ resolver: zodResolver(step3Schema), mode: "onBlur", defaultValues: EMPTY_REGISTER_PAYLOAD.step3 });
+  const form4 = useForm<Step4>({ resolver: zodResolver(step4Schema), mode: "onBlur", defaultValues: EMPTY_REGISTER_PAYLOAD.step4 });
+  const form5 = useForm<Step5>({ resolver: zodResolver(step5Schema), mode: "onBlur", defaultValues: EMPTY_REGISTER_PAYLOAD.step5 });
 
-  const nextStep = () => {
+  const nextStep = async () => {
     let valid = true;
-    if (currentStep === 0) valid = form1.formState.isValid;
-    if (currentStep === 1) valid = form2.formState.isValid;
-    if (currentStep === 2) valid = form3.formState.isValid;
-    if (currentStep === 3) valid = form4.formState.isValid;
-    if (currentStep === 4) valid = form5.formState.isValid;
+    if (currentStep === 0) valid = await form1.trigger();
+    else if (currentStep === 1) valid = await form2.trigger();
+    else if (currentStep === 2) valid = await form3.trigger();
+    else if (currentStep === 3) valid = await form4.trigger();
+    else if (currentStep === 4) valid = await form5.trigger();
     if (!valid) return;
+    setError("");
     setCurrentStep((p) => Math.min(p + 1, STEPS.length - 1));
   };
 
@@ -186,7 +187,7 @@ export default function SellerRegisterPage() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="h-[520px] overflow-hidden relative">
+            <div className="min-h-[420px] sm:h-[520px] overflow-y-auto sm:overflow-hidden relative">
               {currentStep === 0 && <Step1Form form={form1} />}
               {currentStep === 1 && <Step2Form form={form2} />}
               {currentStep === 2 && <Step3Form form={form3} />}

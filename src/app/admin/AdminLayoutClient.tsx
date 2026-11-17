@@ -21,6 +21,7 @@ import {
   ShieldAlert,
   ChevronRight,
   LogOut,
+  Store,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
   { label: "Categories", href: "/admin/categories", icon: Layers },
   { label: "Orders", href: "/admin/orders", icon: ShoppingBag },
   { label: "Customers", href: "/admin/customers", icon: Users },
+  { label: "Seller Requests", href: "/admin/vendors", icon: Store },
   { label: "Coupons", href: "/admin/coupons", icon: Ticket },
   { label: "Reviews", href: "/admin/reviews", icon: Star },
   { label: "Settings", href: "/admin/settings", icon: Settings },

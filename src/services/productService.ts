@@ -289,8 +289,51 @@ export const productService = {
    * Fetch reviews for a specific product.
    */
   async getProductReviews(productId: string): Promise<Review[]> {
-    // Reviews are fetched via a separate endpoint in a future part
-    return [];
+    try {
+      const res = await fetch(`${getApiBase()}/api/v1/products/${productId}/reviews`, {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.success) return [];
+      const reviews = Array.isArray(result?.data?.reviews) ? result.data.reviews : [];
+      return reviews as Review[];
+    } catch {
+      return [];
+    }
+  },
+
+  /**
+   * Submit a customer review for a product.
+   */
+  async createProductReview(
+    productId: string,
+    payload: { rating: number; title: string; comment: string; images?: string[] },
+  ): Promise<{ success: boolean; review?: Review; message?: string; details?: Record<string, string[]> }> {
+    try {
+      const res = await fetch(`${getApiBase()}/api/v1/products/${productId}/reviews`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok || !result?.success) {
+        return {
+          success: false,
+          message: result?.message || "Failed to submit review.",
+          details: result?.error?.details,
+        };
+      }
+      return {
+        success: true,
+        review: result?.data?.review as Review | undefined,
+        message: result?.message,
+      };
+    } catch {
+      return { success: false, message: "Failed to submit review. Please try again." };
+    }
   },
 
   /**

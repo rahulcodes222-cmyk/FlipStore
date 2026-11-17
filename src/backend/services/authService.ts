@@ -5,6 +5,7 @@
  */
 
 import { UserModel, VendorModel } from '@/backend/models';
+import mongoose from 'mongoose';
 import {
   hashPassword,
   comparePassword,
@@ -137,6 +138,32 @@ export async function loginUser(data: LoginInput): Promise<AuthResult> {
 
   if (!user.isActive) {
     throw new Error('Account is deactivated. Please contact support.');
+  }
+
+  // Vendor login is allowed only for approved seller accounts (admin approval required).
+  if (user.role === 'vendor') {
+    let vendor: any = null;
+    const vendorId = (user as any).vendorId;
+    if (vendorId && mongoose.Types.ObjectId.isValid(String(vendorId))) {
+      vendor = await (VendorModel as any).findById(vendorId).lean().exec();
+    }
+    if (!vendor) {
+      vendor = await (VendorModel as any).findOne({ userId: user._id }).lean().exec();
+    }
+    const applicationStatus = normalizeVendorApplicationStatus(
+      vendor?.applicationStatus || vendor?.approvalStatus || (user as any).vendorApplicationStatus,
+    );
+    if (!canVendorAccessDashboard(applicationStatus)) {
+      if (applicationStatus === 'Rejected') {
+        throw new Error('Your seller application was rejected. Please update and resubmit your application.');
+      }
+      if (applicationStatus === 'Suspended') {
+        throw new Error('Your seller account is suspended. Please contact support.');
+      }
+      throw new Error('Your seller account is pending approval and is not available until approved by admin.');
+    }
+    (user as any).vendorApplicationStatus = applicationStatus;
+    (user as any).isVendorApproved = true;
   }
 
   const tokens = await generateTokens(user);

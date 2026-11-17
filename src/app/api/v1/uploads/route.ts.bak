@@ -1,0 +1,85 @@
+﻿import { NextRequest, NextResponse } from "next/server";
+import { mkdir, writeFile } from "fs/promises";
+import path from "path";
+import { withAuth, type AuthenticatedRequest } from "@/backend/middleware/auth";
+import { createErrorResponse, createSuccessResponse } from "@/backend/utils/response";
+import { HTTP_STATUS } from "@/backend/constants";
+
+const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]);
+const MAX_BYTES = 5 * 1024 * 1024;
+
+function sanitizeName(name: string) {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+}
+
+function extFromMime(mime: string, fallbackName: string) {
+  const map: Record<string, string> = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+    "image/gif": ".gif",
+    "image/avif": ".avif",
+  };
+  if (map[mime]) return map[mime];
+  const ext = path.extname(fallbackName || "").toLowerCase();
+  return ext || ".jpg";
+}
+
+export async function POST(req: NextRequest): Promise<NextResponse> {
+  return withAuth(async (authReq: AuthenticatedRequest) => {
+    if (!authReq.user) {
+      return NextResponse.json(
+        createErrorResponse("Authentication required.", { statusCode: HTTP_STATUS.UNAUTHORIZED, code: "AUTH_REQUIRED" }),
+        { status: HTTP_STATUS.UNAUTHORIZED },
+      );
+    }
+
+    try {
+      const form = await (authReq as unknown as NextRequest).formData();
+      const file = form.get("file");
+      const folderRaw = String(form.get("folder") || "misc").toLowerCase();
+      const folder = ["products", "store", "avatars", "misc"].includes(folderRaw) ? folderRaw : "misc";
+
+      if (!(file instanceof File)) {
+        return NextResponse.json(
+          createErrorResponse("Image file is required.", { statusCode: HTTP_STATUS.BAD_REQUEST, code: "FILE_REQUIRED" }),
+          { status: HTTP_STATUS.BAD_REQUEST },
+        );
+      }
+      if (!ALLOWED_TYPES.has(file.type)) {
+        return NextResponse.json(
+          createErrorResponse("Only JPG, PNG, WEBP, GIF, or AVIF images are allowed.", { statusCode: HTTP_STATUS.BAD_REQUEST, code: "INVALID_FILE_TYPE" }),
+          { status: HTTP_STATUS.BAD_REQUEST },
+        );
+      }
+      if (file.size > MAX_BYTES) {
+        return NextResponse.json(
+          createErrorResponse("Image must be 5MB or smaller.", { statusCode: HTTP_STATUS.BAD_REQUEST, code: "FILE_TOO_LARGE" }),
+          { status: HTTP_STATUS.BAD_REQUEST },
+        );
+      }
+
+      const bytes = Buffer.from(await file.arrayBuffer());
+      const ext = extFromMime(file.type, file.name);
+      const base = sanitizeName(path.basename(file.name || "image", path.extname(file.name || ""))).slice(0, 40) || "image";
+      const filename = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${base}${ext}`;
+      const relDir = path.posix.join("/uploads", folder);
+      const absDir = path.join(process.cwd(), "public", "uploads", folder);
+      await mkdir(absDir, { recursive: true });
+      await writeFile(path.join(absDir, filename), bytes);
+
+      const url = `${relDir}/${filename}`;
+      return NextResponse.json(
+        createSuccessResponse({ url, filename, folder, size: file.size, mimeType: file.type }, { message: "File uploaded.", statusCode: HTTP_STATUS.CREATED }),
+        { status: HTTP_STATUS.CREATED },
+      );
+    } catch (error) {
+      console.error("[POST /api/v1/uploads]", error);
+      return NextResponse.json(
+        createErrorResponse("Failed to upload file.", { statusCode: HTTP_STATUS.INTERNAL_SERVER_ERROR, code: "UPLOAD_FAILED" }),
+        { status: HTTP_STATUS.INTERNAL_SERVER_ERROR },
+      );
+    }
+  })(req);
+}
+

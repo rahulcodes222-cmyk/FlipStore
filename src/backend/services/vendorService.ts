@@ -339,11 +339,61 @@ export async function updateVendorApplication(userId: string, data: VendorApplic
 export async function getVendorStoreByUserId(userId: string) {
   const vendor: any = await Vendor.findOne({ userId: new mongoose.Types.ObjectId(userId) } as any).exec();
   if (!vendor) throw new Error('Vendor store not found.');
+
+  let user: any = null;
+  try {
+    user = await UserModel.findById(userId).select('name email phone avatar createdAt').lean().exec();
+  } catch {}
+
+  const appStatus = normalizeVendorApplicationStatus(vendor.applicationStatus);
+  const storeProfile = vendor.storeProfile || {};
+  const businessDetails = vendor.businessDetails || {};
+
   return {
+    sellerId: vendor.sellerId,
+    vendorId: String(vendor._id || vendor.id),
+    name: user?.name || '',
+    email: user?.email || businessDetails.businessEmail || '',
+    phone: user?.phone || businessDetails.businessPhone || '',
+    avatar: user?.avatar || storeProfile.logoUrl || '',
+    joinedAt: vendor.joinedAt || vendor.createdAt || user?.createdAt,
     storeName: vendor.storeName,
     storeSlug: vendor.storeSlug,
-    storeProfile: vendor.storeProfile || {},
-    applicationStatus: normalizeVendorApplicationStatus(vendor.applicationStatus),
+    storeDescription: storeProfile.description || businessDetails.businessDescription || '',
+    storeLogo: storeProfile.logoUrl || '',
+    storeBanner: storeProfile.bannerUrl || '',
+    businessCategory: businessDetails.category || '',
+    businessType: businessDetails.businessType || '',
+    businessEmail: businessDetails.businessEmail || storeProfile.supportEmail || user?.email || '',
+    businessPhone: businessDetails.businessPhone || storeProfile.supportPhone || user?.phone || '',
+    supportEmail: storeProfile.supportEmail || businessDetails.businessEmail || '',
+    supportPhone: storeProfile.supportPhone || businessDetails.businessPhone || '',
+    gstNumber: vendor.gstNumber || '',
+    panNumber: vendor.panNumber || '',
+    address: businessDetails.address || null,
+    bankDetails: vendor.bankDetails?.accountLast4 || vendor.bankDetails?.accountNumberMasked ? {
+      accountHolderName: vendor.bankDetails.accountHolderName || '',
+      bankName: vendor.bankDetails.bankName || '',
+      accountNumberMasked: vendor.bankDetails.accountNumberMasked || (vendor.bankDetails.accountLast4 ? `****${vendor.bankDetails.accountLast4}` : ''),
+      accountLast4: vendor.bankDetails.accountLast4 || '',
+      ifscCode: vendor.bankDetails.ifscCode || '',
+      upiId: vendor.bankDetails.upiId || '',
+      branchName: vendor.bankDetails.branchName || '',
+    } : null,
+    documents: Array.isArray(vendor.documents) ? vendor.documents.map((d: any) => ({
+      id: d.id,
+      type: d.type,
+      fileName: d.fileName,
+      fileUrl: d.fileUrl,
+      mimeType: d.mimeType,
+      status: d.status,
+      uploadedAt: d.uploadedAt,
+    })) : [],
+    storeProfile,
+    businessDetails,
+    applicationStatus: appStatus,
+    verificationStatus: appStatus,
+    storeStatus: 'ACTIVE',
     canAccessDashboard: canVendorAccessDashboard(vendor.applicationStatus),
   };
 }

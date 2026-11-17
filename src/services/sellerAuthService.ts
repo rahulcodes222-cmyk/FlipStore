@@ -166,15 +166,46 @@ export const sellerAuthService = {
     }
 
     const data = (json.data || (json as any)) as LoginApiData;
+    const role = String(data.user?.role || "").toLowerCase();
+    if (role !== "vendor") {
+      clearSellerSession();
+      try { await fetch(`${API_BASE}/api/v1/auth/logout`, { method: "POST", credentials: "include" }); } catch {}
+      throw new Error("Only approved seller accounts can log in to the seller dashboard.");
+    }
+
+    const status = String(data.user?.vendorApplicationStatus || "").toLowerCase();
+    const approved = status === "approved" || data.user?.isVendorApproved === true;
+    if (!approved) {
+      clearSellerSession();
+      throw new Error("Your seller account is not approved yet. Please wait for admin approval.");
+    }
+
     const seller = toSellerFromLogin(data);
-    // Only persist if backend allowed login (approved vendor) and returned tokens
     if (data.tokens?.accessToken) {
       persistSellerSession(seller);
     } else {
       clearSellerSession();
+      throw new Error("Login failed. Please try again.");
     }
 
-    return { seller, token: data.tokens?.accessToken || "" };
+    // Best-effort: enrich with store/application details
+    try {
+      const storeRes = await fetch(`${API_BASE}/api/v1/vendors/store`, { credentials: "include" });
+      const storeJson = await storeRes.json().catch(() => ({} as any));
+      if (storeRes.ok && storeJson?.success !== false && storeJson?.data) {
+        const enriched = {
+          ...seller,
+          storeName: storeJson.data.storeName || seller.storeName,
+          storeSlug: storeJson.data.storeSlug || seller.storeSlug,
+          verificationStatus: storeJson.data.applicationStatus || seller.verificationStatus,
+          applicationStatus: storeJson.data.applicationStatus || seller.applicationStatus,
+        } as Seller;
+        persistSellerSession(enriched);
+        return { seller: enriched, token: data.tokens.accessToken };
+      }
+    } catch {}
+
+    return { seller, token: data.tokens.accessToken };
   },
 
   async register(payload: SellerRegisterPayload): Promise<{ success: boolean; message: string; applicationStatus?: string }> {

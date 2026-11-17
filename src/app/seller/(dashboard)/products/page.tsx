@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
@@ -180,7 +180,7 @@ export default function SellerProductsPage() {
           <Input
             value={filters.search}
             onChange={handleSearch}
-            placeholder="Search products…"
+            placeholder="Search productsâ€¦"
             className="pl-10"
           />
         </div>
@@ -254,34 +254,41 @@ export default function SellerProductsPage() {
           if (checked) products.forEach((p) => next.add(p.id));
           setSelectedIds(next);
         }}
-        getRowId={(row) => row.id}
-        renderRowActions={(row) => (
-          <div className="flex gap-1">
-            <Link
-              href={`/seller/products/${row.id}/edit`}
-              className="p-2 text-[#878787] hover:text-[#2874F0] hover:bg-[#F1F3F6] rounded-sm transition-colors"
-              title="Edit"
-            >
-              <Edit3 size={16} />
-            </Link>
-            <button
-              type="button"
-              onClick={() => setDuplicateId(row.id)}
-              className="p-2 text-[#878787] hover:text-[#2874F0] hover:bg-[#F1F3F6] rounded-sm transition-colors"
-              title="Duplicate"
-            >
-              <Copy size={16} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setDeleteConfirmId(row.id)}
-              className="p-2 text-[#878787] hover:text-[#E53935] hover:bg-[#FFEBEE] rounded-sm transition-colors"
-              title="Delete"
-            >
-              <Trash2 size={16} />
-            </button>
-          </div>
-        )}
+        getRowId={(row) => String(row?.id || "")}
+        renderRowActions={(row) => {
+          const id = String(row?.id || "").trim();
+          const valid = !!id && id !== "undefined" && id !== "null";
+          if (!valid) {
+            return <span className="text-xs text-[#878787]">Unavailable</span>;
+          }
+          return (
+            <div className="flex gap-1">
+              <Link
+                href={`/seller/products/${encodeURIComponent(id)}/edit`}
+                className="p-2 text-[#878787] hover:text-[#2874F0] hover:bg-[#F1F3F6] rounded-sm transition-colors"
+                title="Edit"
+              >
+                <Edit3 size={16} />
+              </Link>
+              <button
+                type="button"
+                onClick={() => setDuplicateId(id)}
+                className="p-2 text-[#878787] hover:text-[#2874F0] hover:bg-[#F1F3F6] rounded-sm transition-colors"
+                title="Duplicate"
+              >
+                <Copy size={16} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmId(id)}
+                className="p-2 text-[#878787] hover:text-[#E53935] hover:bg-[#FFEBEE] rounded-sm transition-colors"
+                title="Delete"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          );
+        }}
       />
 
       {/* Pagination */}
@@ -329,3 +336,4 @@ export default function SellerProductsPage() {
     </div>
   );
 }
+
