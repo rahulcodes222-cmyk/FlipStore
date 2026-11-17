@@ -204,6 +204,7 @@ export interface Order {
 export interface Review {
   id: string;
   productId: string;
+  productName?: string;
   userId: string;
   userName: string;
   userLocation: string;
@@ -494,7 +495,9 @@ export interface SellerRegisterPayload {
  * Multi-vendor seller management (Part 2)
  */
 
-export type ProductStatus = 'DRAFT' | 'PUBLISHED' | 'OUT_OF_STOCK' | 'REJECTED';
+export type ProductStatus = 'DRAFT' | 'PUBLISHED' | 'OUT_OF_STOCK' | 'REJECTED'; // legacy/compat
+export type ProductApprovalStatus = 'Draft' | 'Pending Approval' | 'Under Review' | 'Approved' | 'Rejected' | 'Changes Requested';
+export type ProductPublicationStatus = 'Active' | 'Inactive';
 export type StockStatus = 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
 export type ReturnStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'PROCESSING' | 'COMPLETED' | 'REFUNDED' | 'REPLACED';
 export type ReviewStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
@@ -523,6 +526,20 @@ export interface Specification {
   value: string;
 }
 
+export interface ProductApprovalHistoryEntry {
+  action: string;
+  fromApprovalStatus?: string;
+  toApprovalStatus?: string;
+  fromProductStatus?: string;
+  toProductStatus?: string;
+  reason?: string;
+  comment?: string;
+  actorId?: string;
+  actorRole?: string;
+  actorName?: string;
+  createdAt?: string;
+}
+
 export interface SellerProduct {
   id: string;
   sellerId: string;
@@ -542,7 +559,19 @@ export interface SellerProduct {
   taxPercentage: number;
   stock: number;
   lowStockThreshold: number;
-  status: ProductStatus;
+  status: ProductStatus; // legacy/compat
+  approvalStatus?: ProductApprovalStatus;
+  productStatus?: ProductPublicationStatus;
+  rejectionReason?: string;
+  adminComment?: string;
+  submittedAt?: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+  approvedAt?: string;
+  approvedBy?: string;
+  changesRequestedAt?: string;
+  rejectedAt?: string;
+  approvalHistory?: ProductApprovalHistoryEntry[];
   images: ProductImage[];
   variants: ProductVariant[];
   specifications: Specification[];

@@ -3,9 +3,16 @@ import { OrderModel, ProductModel, ReviewModel } from "@/backend/models";
 import type { CreateProductReviewInput } from "@/backend/validations/review.schema";
 
 function toFrontendReview(doc: any) {
+  const p = doc?.productId;
+  const productName = String(
+    doc?.productName ||
+      (p && typeof p === "object" ? (p.name || p.title || "") : "") ||
+      ""
+  );
   return {
     id: String(doc.id || doc._id),
-    productId: String(doc.productId?._id || doc.productId || ""),
+    productId: String((p && typeof p === "object" ? (p._id || p.id) : p) || ""),
+    productName,
     userId: String(doc.userId?._id || doc.userId || ""),
     userName: String(doc.userName || "Customer"),
     userLocation: String(doc.userLocation || ""),
@@ -96,6 +103,10 @@ export async function createProductReview(params: {
     .lean()
     .exec() as any;
 
+  if (!purchasedOrder) {
+    throw new Error("You can review this product only after purchasing it.");
+  }
+
   const created = await ReviewModel.create({
     productId: productObjectId,
     orderId: purchasedOrder?._id,
@@ -106,7 +117,7 @@ export async function createProductReview(params: {
     comment: data.comment.trim(),
     images: Array.isArray(data.images) ? data.images.filter(Boolean).slice(0, 5) : [],
     status: "APPROVED",
-    isVerifiedPurchase: !!purchasedOrder,
+    isVerifiedPurchase: true,
     helpfulCount: 0,
   } as any);
 
@@ -114,4 +125,49 @@ export async function createProductReview(params: {
 
   const doc = typeof (created as any)?.toObject === "function" ? (created as any).toObject() : created;
   return toFrontendReview(doc);
+}
+
+export async function listAdminReviews(params?: { rating?: number; search?: string }) {
+  const filter: Record<string, any> = {};
+  if (params?.rating != null && Number.isFinite(Number(params.rating)) && Number(params.rating) > 0) {
+    filter.rating = Number(params.rating);
+  }
+  const search = String(params?.search || "").trim();
+  let productIdsByName: mongoose.Types.ObjectId[] = [];
+  if (search) {
+    const esc = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(esc, "i");
+    filter.$or = [{ userName: re }, { title: re }, { comment: re }, { userLocation: re }];
+    if (mongoose.isValidObjectId(search)) {
+      filter.$or.push({ _id: new mongoose.Types.ObjectId(search) }, { productId: new mongoose.Types.ObjectId(search) });
+    }
+    try {
+      const prods = await ProductModel.find({ $or: [{ name: re }, { title: re }, { slug: re }] }).select("_id").limit(100).lean().exec();
+      productIdsByName = (prods || []).map((p: any) => p._id).filter(Boolean);
+      if (productIdsByName.length) filter.$or.push({ productId: { $in: productIdsByName } });
+    } catch {}
+  }
+
+  const docs = await ReviewModel.find(filter)
+    .populate("productId", "name title slug")
+    .sort({ createdAt: -1 })
+    .limit(500)
+    .lean()
+    .exec();
+
+  return docs.map(toFrontendReview);
+}
+
+export async function deleteReviewByAdmin(reviewId: string) {
+  if (!mongoose.isValidObjectId(reviewId)) {
+    throw new Error("Invalid review ID.");
+  }
+  const existing = await ReviewModel.findById(reviewId).select("_id productId").lean().exec() as any;
+  if (!existing) {
+    throw new Error("Review not found.");
+  }
+  const productId = String(existing.productId || "");
+  await ReviewModel.deleteOne({ _id: reviewId }).exec();
+  if (productId) await recalcProductReviewStats(productId);
+  return { id: String(existing._id || reviewId), deleted: true };
 }

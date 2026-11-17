@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
@@ -22,6 +22,7 @@ import {
   ChevronRight,
   LogOut,
   Store,
+  BadgeCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -32,6 +33,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
   { label: "Products", href: "/admin/products", icon: Package },
+  { label: "Product Approvals", href: "/admin/product-approvals", icon: BadgeCheck },
   { label: "Categories", href: "/admin/categories", icon: Layers },
   { label: "Orders", href: "/admin/orders", icon: ShoppingBag },
   { label: "Customers", href: "/admin/customers", icon: Users },

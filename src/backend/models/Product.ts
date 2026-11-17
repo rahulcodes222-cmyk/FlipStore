@@ -1,12 +1,29 @@
 /**
  * Product Mongoose Model
  * Core product model with sellerId for multi-vendor isolation.
+ * Extended for Seller Product Approval & Admin Verification workflow.
  */
 
 import mongoose, { Schema, Model } from 'mongoose';
 import type { IProductDocument } from '@/backend/types';
 
-
+const productApprovalHistorySchema = new Schema(
+  {
+    action: { type: String, required: true, trim: true }, // DRAFT_SAVED|SUBMITTED|UNDER_REVIEW|APPROVED|REJECTED|CHANGES_REQUESTED|RESUBMITTED|ACTIVATED|DEACTIVATED
+    fromApprovalStatus: { type: String, trim: true },
+    toApprovalStatus: { type: String, trim: true },
+    fromProductStatus: { type: String, trim: true },
+    toProductStatus: { type: String, trim: true },
+    reason: { type: String, trim: true },
+    comment: { type: String, trim: true },
+    actorId: { type: Schema.Types.ObjectId as any, ref: 'User' },
+    actorRole: { type: String, trim: true },
+    actorName: { type: String, trim: true },
+    metadata: { type: Schema.Types.Mixed },
+    createdAt: { type: Date, default: Date.now },
+  },
+  { _id: false },
+);
 
 const productSchema = new Schema<IProductDocument>(
   {
@@ -114,11 +131,36 @@ const productSchema = new Schema<IProductDocument>(
       default: 10,
       min: 0,
     },
+    // Legacy/compat publication-ish field kept for existing code paths
     status: {
       type: String,
       enum: ['DRAFT', 'PUBLISHED', 'OUT_OF_STOCK', 'REJECTED'],
       default: 'DRAFT',
     },
+    // Product approval workflow (seller/admin review)
+    approvalStatus: {
+      type: String,
+      enum: ['Draft', 'Pending Approval', 'Under Review', 'Approved', 'Rejected', 'Changes Requested'],
+      default: 'Draft',
+      index: true,
+    },
+    // Publication/listing state separate from approval (seller cannot self-approve but may toggle active after approval where allowed)
+    productStatus: {
+      type: String,
+      enum: ['Active', 'Inactive'],
+      default: 'Inactive',
+      index: true,
+    },
+    rejectionReason: { type: String, trim: true },
+    adminComment: { type: String, trim: true },
+    submittedAt: { type: Date },
+    reviewedAt: { type: Date },
+    reviewedBy: { type: Schema.Types.ObjectId as any, ref: 'User' },
+    approvedAt: { type: Date },
+    approvedBy: { type: Schema.Types.ObjectId as any, ref: 'User' },
+    changesRequestedAt: { type: Date },
+    rejectedAt: { type: Date },
+    approvalHistory: { type: [productApprovalHistorySchema], default: [] },
     images: {
       type: [
         {
@@ -207,6 +249,8 @@ productSchema.index({ categoryId: 1 });
 productSchema.index({ brand: 1 });
 productSchema.index({ brandId: 1 });
 productSchema.index({ status: 1 });
+productSchema.index({ approvalStatus: 1 });
+productSchema.index({ productStatus: 1 });
 productSchema.index({ isAssured: 1 });
 productSchema.index({ isFreeDelivery: 1 });
 productSchema.index({ price: 1 });
@@ -214,7 +258,9 @@ productSchema.index({ rating: -1 });
 productSchema.index({ unitsSold: -1 });
 productSchema.index({ name: 'text', description: 'text', shortDescription: 'text' });
 productSchema.index({ sellerId: 1, status: 1 });
+productSchema.index({ sellerId: 1, approvalStatus: 1 });
 productSchema.index({ sellerId: 1, category: 1 });
+productSchema.index({ approvalStatus: 1, productStatus: 1 });
 
 const ProductModel: Model<IProductDocument> =
   (mongoose.models.Product as Model<IProductDocument> | undefined) ||

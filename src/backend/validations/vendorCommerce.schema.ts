@@ -43,7 +43,9 @@ export const vendorCreateProductSchema = z.object({
   taxPercentage: z.coerce.number().min(0).max(100).optional(),
   stock: z.coerce.number().int().min(0),
   lowStockThreshold: z.coerce.number().int().min(0).optional(),
-  status: z.enum(['DRAFT', 'PENDING_APPROVAL', 'PUBLISHED', 'ARCHIVED', 'OUT_OF_STOCK']).optional(),
+  // Seller-intent only: draft/save or submit for approval. Seller cannot approve/activate.
+  status: z.enum(['DRAFT', 'PENDING_APPROVAL', 'OUT_OF_STOCK']).optional(),
+  publishAfterApproval: z.boolean().optional(),
   images: z.array(imageSchema).min(1, 'At least one image is required').max(10),
   variants: z.array(variantSchema).max(50).optional(),
   seoTitle: z.string().trim().max(200).optional(),
@@ -58,6 +60,7 @@ export const vendorProductQuerySchema = z.object({
   search: z.string().optional(),
   category: z.string().optional(),
   status: z.string().optional(),
+  approvalStatus: z.string().optional(),
   stock: z.enum(['IN_STOCK', 'LOW_STOCK', 'OUT_OF_STOCK']).optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(100).optional().default(20),
@@ -69,6 +72,7 @@ export const vendorInventoryUpdateSchema = z.object({
   delta: z.number().int().optional(),
   lowStockThreshold: z.number().int().min(0).optional(),
   variantId: z.string().trim().optional(),
+  sku: z.string().trim().optional(),
   reason: z.string().trim().max(500).optional(),
 }).refine((d) => d.stock !== undefined || d.delta !== undefined || d.lowStockThreshold !== undefined, {
   message: 'Provide stock, delta, or lowStockThreshold.',

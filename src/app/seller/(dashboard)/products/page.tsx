@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
@@ -25,14 +25,26 @@ import { ConfirmDialog } from "@/components/seller/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type { SellerProduct, ProductFilters, ProductStatus } from "@/types";
+import type { SellerProduct, ProductFilters } from "@/types";
 
-const STATUS_CONFIG: Record<ProductStatus, { bg: string; text: string; border: string }> = {
-  DRAFT: { bg: "bg-[#F5F5F5]", text: "text-[#616161]", border: "border-[#E0E0E0]" },
-  PUBLISHED: { bg: "bg-[#E8F5E9]", text: "text-[#2E7D32]", border: "border-[#C8E6C9]" },
-  OUT_OF_STOCK: { bg: "bg-[#FFEBEE]", text: "text-[#C62828]", border: "border-[#FFCDD2]" },
-  REJECTED: { bg: "bg-[#F5F5F5]", text: "text-[#616161]", border: "border-[#E0E0E0]" },
+const APPROVAL_CONFIG: Record<string, { bg: string; text: string; border: string; label: string }> = {
+  Draft: { bg: "bg-[#F5F5F5]", text: "text-[#616161]", border: "border-[#E0E0E0]", label: "Draft" },
+  "Pending Approval": { bg: "bg-[#FFF8E1]", text: "text-[#B26A00]", border: "border-[#FFE082]", label: "Pending Approval" },
+  "Under Review": { bg: "bg-[#E3F2FD]", text: "text-[#1565C0]", border: "border-[#BBDEFB]", label: "Under Review" },
+  Approved: { bg: "bg-[#E8F5E9]", text: "text-[#2E7D32]", border: "border-[#C8E6C9]", label: "Approved" },
+  Rejected: { bg: "bg-[#FFEBEE]", text: "text-[#C62828]", border: "border-[#FFCDD2]", label: "Rejected" },
+  "Changes Requested": { bg: "bg-[#FFF3E0]", text: "text-[#E65100]", border: "border-[#FFE0B2]", label: "Changes Requested" },
+  Active: { bg: "bg-[#E8F5E9]", text: "text-[#2E7D32]", border: "border-[#C8E6C9]", label: "Active" },
+  Inactive: { bg: "bg-[#F5F5F5]", text: "text-[#616161]", border: "border-[#E0E0E0]", label: "Inactive" },
 };
+
+function getDisplayStatus(p: any): string {
+  const approval = String(p?.approvalStatus || "Draft");
+  const publication = String(p?.productStatus || "Inactive");
+  if (approval === "Approved" && publication === "Active") return "Active";
+  if (approval === "Approved" && publication === "Inactive") return "Approved";
+  return approval;
+}
 
 export default function SellerProductsPage() {
   const router = useRouter();
@@ -81,13 +93,13 @@ export default function SellerProductsPage() {
     loadProducts();
   }, [loadProducts]);
 
-  const handleStatusChange = async (productId: string, status: ProductStatus) => {
+  const handleSubmitForApproval = async (productId: string) => {
     try {
-      await sellerProductService.updateProduct(sellerId, productId, { status });
-      success(`Product status updated to ${status}`);
+      await sellerProductService.submitProduct(sellerId, productId);
+      success("Product submitted for approval");
       loadProducts();
-    } catch {
-      error("Failed to update status");
+    } catch (e: any) {
+      error(e?.message || "Failed to submit for approval");
     }
   };
 
@@ -139,15 +151,31 @@ export default function SellerProductsPage() {
   };
 
   const columns = [
-    { key: "image", label: "Image", width: "60px" },
-    { key: "name", label: "Product Name", sortable: true },
+    {
+      key: "image", label: "Image", width: "60px", render: (_: any, row: any) => (
+        <div className="h-10 w-10 rounded-sm border border-[#E0E0E0] bg-[#F9FAFB] overflow-hidden flex items-center justify-center">
+          {row.thumbnail ? <img src={row.thumbnail} alt={row.name} className="h-full w-full object-cover" /> : <Package size={14} className="text-[#9E9E9E]" />}
+        </div>
+      )
+    },
+    { key: "name", label: "Product Name", sortable: true, render: (_: any, row: any) => (
+      <div className="min-w-[180px]">
+        <p className="font-semibold text-[#212121] line-clamp-1">{row.name}</p>
+        <p className="text-[10px] text-[#878787] line-clamp-1">{row.slug}</p>
+        {(row.rejectionReason || row.adminComment) && <p className="text-[10px] text-[#C62828] line-clamp-1 mt-0.5" title={row.rejectionReason || row.adminComment}>{row.rejectionReason ? `Reason: ${row.rejectionReason}` : `Admin: ${row.adminComment}`}</p>}
+      </div>
+    )},
     { key: "sku", label: "SKU" },
     { key: "category", label: "Category" },
-    { key: "price", label: "Selling Price" },
-    { key: "mrp", label: "Original Price" },
+    { key: "price", label: "Selling Price", render: (v: any) => `₹${Number(v || 0).toLocaleString("en-IN")}` },
+    { key: "mrp", label: "Original Price", render: (v: any) => `₹${Number(v || 0).toLocaleString("en-IN")}` },
     { key: "stock", label: "Stock" },
     { key: "unitsSold", label: "Units Sold" },
-    { key: "status", label: "Status" },
+    { key: "approvalStatus", label: "Status", render: (_: any, row: any) => {
+      const st = getDisplayStatus(row);
+      const cfg = APPROVAL_CONFIG[st] || APPROVAL_CONFIG.Draft;
+      return <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold whitespace-nowrap", cfg.bg, cfg.text, cfg.border)}>{cfg.label}</span>;
+    }},
   ];
 
   return (
@@ -199,12 +227,15 @@ export default function SellerProductsPage() {
           <select
             value={filters.status || ""}
             onChange={(e) => handleFilterChange("status", e.target.value)}
-            className="flex h-9 w-24 rounded-sm border border-[#E0E0E0] bg-white px-2 py-1 text-xs focus-visible:ring-1 focus-visible:ring-[#2874F0]"
+            className="flex h-9 w-36 rounded-sm border border-[#E0E0E0] bg-white px-2 py-1 text-xs focus-visible:ring-1 focus-visible:ring-[#2874F0]"
           >
-            <option value="">Status</option>
-            <option value="PUBLISHED">Published</option>
-            <option value="DRAFT">Draft</option>
-            <option value="OUT_OF_STOCK">Out of Stock</option>
+            <option value="">All Statuses</option>
+            <option value="Draft">Draft</option>
+            <option value="Pending Approval">Pending Approval</option>
+            <option value="Under Review">Under Review</option>
+            <option value="Approved">Approved</option>
+            <option value="Rejected">Rejected</option>
+            <option value="Changes Requested">Changes Requested</option>
           </select>
         </div>
         <Button
@@ -261,8 +292,21 @@ export default function SellerProductsPage() {
           if (!valid) {
             return <span className="text-xs text-[#878787]">Unavailable</span>;
           }
+          const approval = String(row?.approvalStatus || "Draft");
+          const canSubmit = ["Draft", "Rejected", "Changes Requested", "Approved"].includes(approval);
+          const submitLabel = ["Rejected", "Changes Requested", "Approved"].includes(approval) ? "Resubmit" : "Submit";
           return (
-            <div className="flex gap-1">
+            <div className="flex gap-1 items-center">
+              {canSubmit && (
+                <button
+                  type="button"
+                  onClick={() => handleSubmitForApproval(id)}
+                  className="px-2 py-1 text-[10px] font-semibold text-[#2874F0] hover:bg-[#E3F2FD] rounded-sm border border-[#BBDEFB]"
+                  title="Submit for approval"
+                >
+                  {submitLabel}
+                </button>
+              )}
               <Link
                 href={`/seller/products/${encodeURIComponent(id)}/edit`}
                 className="p-2 text-[#878787] hover:text-[#2874F0] hover:bg-[#F1F3F6] rounded-sm transition-colors"

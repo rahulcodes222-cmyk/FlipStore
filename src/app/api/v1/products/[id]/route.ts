@@ -59,8 +59,22 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
 
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
   return withDatabase(
-    withAuth(
-      withRole(USER_ROLES.VENDOR)(async (authReq) => {
+    withAuth(async (authReq) => {
+      if (!authReq.user) {
+        return NextResponse.json(
+          createErrorResponse('Authentication required.', {
+            statusCode: HTTP_STATUS.UNAUTHORIZED,
+            code: 'AUTH_REQUIRED',
+            requestId: authReq.requestId,
+          }),
+          { status: HTTP_STATUS.UNAUTHORIZED },
+        );
+      }
+      const role = String(authReq.user.role || '').toLowerCase();
+      if (role !== 'vendor' && role !== 'admin' && role !== 'super_admin') {
+        return NextResponse.json(createErrorResponse('Insufficient permissions.', { statusCode: HTTP_STATUS.FORBIDDEN, code: 'INSUFFICIENT_PERMISSIONS', requestId: authReq.requestId }), { status: HTTP_STATUS.FORBIDDEN });
+      }
+      const run = async () => {
         if (!authReq.user) {
           return NextResponse.json(
             createErrorResponse('Authentication required.', {
@@ -183,8 +197,9 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
             { status: HTTP_STATUS.INTERNAL_SERVER_ERROR },
           );
         }
-      }),
-    ),
+      };
+      return await run();
+    }),
   )(req);
 }
 

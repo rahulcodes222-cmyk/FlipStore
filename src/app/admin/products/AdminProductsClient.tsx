@@ -44,7 +44,7 @@ export function AdminProductsClient() {
     setLoading(true);
     try {
       const [prods, cats] = await Promise.all([
-        adminService.getProducts(),
+        adminService.getProducts({ adminView: true }),
         adminService.getCategories(),
       ]);
       setProducts(prods);

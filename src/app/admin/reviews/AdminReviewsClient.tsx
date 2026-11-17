@@ -198,7 +198,11 @@ export function AdminReviewsClient() {
                       <ThumbsUp size={11} /> {r.helpfulCount} helpful votes
                     </span>
                   )}
-                  <span className="font-mono text-gray-400">Product: {r.productId}</span>
+                  <span className="text-gray-500">
+                    <span className="font-semibold text-gray-600">Product:</span>{" "}
+                    <span className="text-gray-700">{r.productName || "Unknown Product"}</span>
+                    {r.productId ? <span className="font-mono text-[10px] text-gray-400 ml-1">({r.productId})</span> : null}
+                  </span>
                 </div>
               </div>
 

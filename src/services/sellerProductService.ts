@@ -57,6 +57,9 @@ function mapProduct(p: any): SellerProduct {
   const variants = Array.isArray(p?.variants) ? p.variants : [];
   const rawId = p?.id ?? p?._id;
   const id = rawId === undefined || rawId === null ? "" : String(rawId).trim();
+  const legacy = String(p?.status || "DRAFT").toUpperCase();
+  const approvalStatus = String(p?.approvalStatus || (legacy === "PUBLISHED" ? "Approved" : legacy === "REJECTED" ? "Rejected" : "Draft"));
+  const productStatus = String(p?.productStatus || (legacy === "PUBLISHED" ? "Active" : "Inactive"));
   return {
     id: id === "undefined" || id === "null" ? "" : id,
     sellerId: String(p?.sellerId || ""),
@@ -77,6 +80,18 @@ function mapProduct(p: any): SellerProduct {
     stock: Number(p?.stock || 0),
     lowStockThreshold: Number(p?.lowStockThreshold || 0),
     status: (p?.status || "DRAFT") as any,
+    approvalStatus: approvalStatus as any,
+    productStatus: productStatus as any,
+    rejectionReason: String(p?.rejectionReason || ""),
+    adminComment: String(p?.adminComment || ""),
+    submittedAt: p?.submittedAt || undefined,
+    reviewedAt: p?.reviewedAt || undefined,
+    reviewedBy: p?.reviewedBy || undefined,
+    approvedAt: p?.approvedAt || undefined,
+    approvedBy: p?.approvedBy || undefined,
+    changesRequestedAt: p?.changesRequestedAt || undefined,
+    rejectedAt: p?.rejectedAt || undefined,
+    approvalHistory: Array.isArray(p?.approvalHistory) ? p.approvalHistory : [],
     images: images.map((img: any, i: number) => ({ id: String(img?.id || `img-${i + 1}`), url: String(img?.url || ""), alt: String(img?.alt || p?.name || ""), isPrimary: !!img?.isPrimary || (i === 0 && !primary) })).filter((i: any) => i.url),
     thumbnail: String(p?.thumbnail || primary?.url || ""),
     variants: variants.map((v: any, i: number) => ({ id: String(v?.id || `var-${i + 1}`), sku: String(v?.sku || ""), size: v?.size, color: v?.color, price: Number(v?.price || 0), mrp: Number(v?.mrp ?? v?.price ?? 0), stock: Number(v?.stock || 0) })),
@@ -156,10 +171,14 @@ export const sellerProductService = {
     await api<any>(`/api/v1/vendor/products/${productId}`, { method: "DELETE" });
     return true;
   },
+  async submitProduct(_sellerId: string, productId: string): Promise<SellerProduct> {
+    const p = await api<any>(`/api/v1/vendor/products/${encodeURIComponent(productId)}/submit`, { method: "PATCH" });
+    return mapProduct(p);
+  },
   async duplicateProduct(sellerId: string, productId: string): Promise<SellerProduct | null> {
     const src = await this.getProduct(sellerId, productId);
     if (!src) return null;
-    const { id, createdAt, updatedAt, unitsSold, totalRevenue, rating, reviewCount, thumbnail, ...rest } = src as any;
+    const { id, createdAt, updatedAt, unitsSold, totalRevenue, rating, reviewCount, thumbnail, approvalHistory, reviewedAt, reviewedBy, approvedAt, approvedBy, submittedAt, rejectionReason, adminComment, changesRequestedAt, rejectedAt, approvalStatus, productStatus, ...rest } = src as any;
     return this.createProduct(sellerId, { ...rest, name: `${src.name} (Copy)`, slug: `${src.slug}-copy-${Date.now().toString().slice(-4)}`, sku: `${src.sku}-COPY-${Date.now().toString().slice(-4)}`, status: "DRAFT" });
   },
   async getCategories(_sellerId: string): Promise<string[]> {

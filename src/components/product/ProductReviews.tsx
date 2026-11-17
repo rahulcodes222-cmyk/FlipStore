@@ -1,13 +1,10 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { Review } from "@/types";
 import { productService } from "@/services/productService";
 import { RatingStars } from "@/components/common/RatingStars";
-import { Button } from "@/components/ui/button";
-import { useAuthStore } from "@/store/useAuthStore";
-import { ThumbsUp, CheckCircle, Star } from "lucide-react";
+import { ThumbsUp, CheckCircle } from "lucide-react";
 import { formatDate } from "@/utils/formatters";
 
 interface ProductReviewsProps {
@@ -23,13 +20,8 @@ export function ProductReviews({
   ratingCount,
   reviewCount,
 }: ProductReviewsProps) {
-  const { isAuthenticated, user } = useAuthStore();
   const [reviews, setReviews] = useState<Review[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [submitLoading, setSubmitLoading] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
-  const [form, setForm] = useState({ rating: 5, title: "", comment: "" });
   const [summary, setSummary] = useState({ rating, ratingCount, reviewCount });
 
   useEffect(() => {
@@ -69,53 +61,6 @@ export function ProductReviews({
     }));
   }, [reviews]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitError(null);
-    setSubmitSuccess(null);
-
-    if (!isAuthenticated || !user) {
-      setSubmitError("Please log in to submit a review.");
-      return;
-    }
-    if (form.title.trim().length < 3 || form.comment.trim().length < 10) {
-      setSubmitError("Please provide a clear title and a detailed review.");
-      return;
-    }
-
-    setSubmitLoading(true);
-    try {
-      const result = await productService.createProductReview(productId, {
-        rating: form.rating,
-        title: form.title.trim(),
-        comment: form.comment.trim(),
-      });
-
-      if (!result.success || !result.review) {
-        const detailMsg = result.details
-          ? Object.values(result.details).flat().filter(Boolean)[0]
-          : null;
-        setSubmitError(detailMsg || result.message || "Failed to submit review.");
-        return;
-      }
-
-      setReviews((prev) => [result.review as Review, ...prev.filter((r) => r.id !== result.review?.id)]);
-      setForm({ rating: 5, title: "", comment: "" });
-      setSubmitSuccess("Review submitted successfully.");
-      setSummary((prev) => {
-        const nextCount = prev.reviewCount + 1;
-        const nextAvg = nextCount > 0 ? ((prev.rating * prev.reviewCount) + (result.review?.rating || form.rating)) / nextCount : result.review?.rating || form.rating;
-        return {
-          rating: Math.round(nextAvg * 10) / 10,
-          ratingCount: prev.ratingCount + 1,
-          reviewCount: nextCount,
-        };
-      });
-    } finally {
-      setSubmitLoading(false);
-    }
-  };
-
   return (
     <div className="bg-white border border-[#E0E0E0] rounded-sm p-4 sm:p-6 shadow-2xs">
       <div className="flex items-center justify-between pb-4 border-b border-[#F0F0F0] mb-6 gap-3">
@@ -150,66 +95,12 @@ export function ProductReviews({
         </div>
       </div>
 
-      <div className="mt-6 border-b border-[#F0F0F0] pb-6">
-        <h3 className="text-sm font-bold text-[#212121] mb-3">Write a review</h3>
-        {!isAuthenticated ? (
-          <div className="text-sm text-[#616161] bg-[#F9FAFB] border border-[#E0E0E0] rounded-sm p-3">
-            Please <Link href="/login" className="text-[#2874F0] font-medium hover:underline">log in</Link> to write a product review.
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-3">
-            <div>
-              <label className="block text-xs font-medium text-[#616161] mb-1">Rating</label>
-              <div className="flex items-center gap-1">
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setForm((prev) => ({ ...prev, rating: s }))}
-                    className="p-1 rounded-sm hover:bg-[#F1F3F6]"
-                    aria-label={`Rate ${s} star${s > 1 ? "s" : ""}`}
-                  >
-                    <Star size={18} className={s <= form.rating ? "fill-[#FF9F00] text-[#FF9F00]" : "text-[#C2C2C2]"} />
-                  </button>
-                ))}
-                <span className="ml-2 text-xs text-[#616161]">{form.rating}/5</span>
-              </div>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[#616161] mb-1">Review title</label>
-              <input
-                value={form.title}
-                onChange={(e) => setForm((prev) => ({ ...prev, title: e.target.value }))}
-                className="w-full rounded-sm border border-[#E0E0E0] px-3 py-2 text-sm outline-none focus:border-[#2874F0]"
-                placeholder="Summarize your experience"
-                maxLength={200}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[#616161] mb-1">Your review</label>
-              <textarea
-                value={form.comment}
-                onChange={(e) => setForm((prev) => ({ ...prev, comment: e.target.value }))}
-                className="w-full min-h-[96px] rounded-sm border border-[#E0E0E0] px-3 py-2 text-sm outline-none focus:border-[#2874F0]"
-                placeholder="Share details about quality, delivery, usage, and value"
-                maxLength={2000}
-              />
-            </div>
-            {submitError ? <p className="text-xs text-[#D32F2F]">{submitError}</p> : null}
-            {submitSuccess ? <p className="text-xs text-[#388E3C]">{submitSuccess}</p> : null}
-            <Button type="submit" disabled={submitLoading} className="bg-[#FB641B] hover:bg-[#e65a17] text-white">
-              {submitLoading ? "Submitting..." : "Submit Review"}
-            </Button>
-          </form>
-        )}
-      </div>
-
       <div className="mt-6 space-y-5">
         {isLoading ? (
           <div className="py-6 text-center text-xs text-[#878787]">Loading verified customer reviews...</div>
         ) : reviews.length === 0 ? (
           <div className="py-6 text-center text-xs text-[#878787]">
-            No detailed reviews written yet. Be the first to review this product!
+            No detailed reviews written yet.
           </div>
         ) : (
           reviews.map((rev) => (

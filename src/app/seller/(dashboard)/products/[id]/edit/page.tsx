@@ -45,7 +45,7 @@ const productSchema = z.object({
   taxPercentage: z.coerce.number().min(0).max(100).optional(),
   stock: z.coerce.number().int().min(0, "Stock must be 0 or more"),
   lowStockThreshold: z.coerce.number().int().min(0).optional(),
-  status: z.enum(["DRAFT", "PUBLISHED", "OUT_OF_STOCK"]),
+  status: z.enum(["DRAFT", "PENDING_APPROVAL", "OUT_OF_STOCK"]),
   seoTitle: z.string().optional(),
   seoDescription: z.string().optional(),
   estimatedDeliveryDays: z.coerce.number().int().min(0).max(30).optional(),
@@ -165,7 +165,7 @@ export default function SellerEditProductPage() {
             taxPercentage: p.taxPercentage ?? 18,
             stock: p.stock ?? 0,
             lowStockThreshold: p.lowStockThreshold ?? 5,
-            status: (p.status === "REJECTED" ? "DRAFT" : p.status) as any,
+            status: (String((p as any).approvalStatus || "") === "Pending Approval" || String((p as any).approvalStatus || "") === "Under Review") ? "PENDING_APPROVAL" : "DRAFT",
             seoTitle: p.seoTitle || "",
             seoDescription: p.seoDescription || "",
             estimatedDeliveryDays: p.estimatedDeliveryDays ?? 5,
@@ -263,7 +263,7 @@ export default function SellerEditProductPage() {
     setIsSaving(true);
     try {
       await sellerProductService.updateProduct(sellerId, productId, payload);
-      success("Product updated successfully");
+      success(values.status === "PENDING_APPROVAL" ? "Product submitted for approval." : "Product changes saved as draft.");
       router.push("/seller/products");
     } catch (err: any) {
       const msg = err?.message || "Failed to update product.";
@@ -307,9 +307,13 @@ export default function SellerEditProductPage() {
         </Link>
         <div className="flex items-center gap-3">
           <h1 className="text-lg font-bold text-[#212121]">Edit Product</h1>
-          <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold border", product.status === "PUBLISHED" ? "bg-[#E8F5E9] text-[#2E7D32] border-[#C8E6C9]" : product.status === "DRAFT" ? "bg-[#F5F5F5] text-[#616161] border-[#E0E0E0]" : "bg-[#FFEBEE] text-[#C62828] border-[#FFCDD2]")}>
-            {product.status.charAt(0) + product.status.slice(1).toLowerCase().replace(/_/g, " ")}
-          </span>
+          {(() => {
+            const st = String((product as any).approvalStatus || "Draft");
+            const ps = String((product as any).productStatus || "Inactive");
+            const label = st === "Approved" && ps === "Active" ? "Active" : st === "Approved" ? "Approved" : st;
+            const cls = st === "Approved" ? "bg-[#E8F5E9] text-[#2E7D32] border-[#C8E6C9]" : st === "Rejected" ? "bg-[#FFEBEE] text-[#C62828] border-[#FFCDD2]" : st === "Changes Requested" ? "bg-[#FFF3E0] text-[#E65100] border-[#FFE0B2]" : st === "Pending Approval" || st === "Under Review" ? "bg-[#FFF8E1] text-[#B26A00] border-[#FFE082]" : "bg-[#F5F5F5] text-[#616161] border-[#E0E0E0]";
+            return <span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold border", cls)}>{label}</span>;
+          })()}
         </div>
       </div>
 
@@ -318,6 +322,12 @@ export default function SellerEditProductPage() {
           <CardTitle>Edit {product.name}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
+          {((product as any)?.rejectionReason || (product as any)?.adminComment) && (
+            <div className={cn("rounded-sm border px-3 py-2 text-sm", String((product as any).approvalStatus) === "Rejected" ? "border-red-200 bg-red-50 text-red-700" : "border-amber-200 bg-amber-50 text-amber-800")}>
+              <p className="font-semibold text-xs mb-0.5">{String((product as any).approvalStatus) === "Rejected" ? "Rejection Feedback" : "Requested Changes / Admin Comment"}</p>
+              <p>{String((product as any).rejectionReason || (product as any).adminComment)}</p>
+            </div>
+          )}
           <form onSubmit={form.handleSubmit(handleSubmit, onInvalid)} className="space-y-8">
             <section className="space-y-4">
               <div className="flex items-center gap-2 mb-2"><Package size={18} className="text-[#2874F0]" /><h3 className="text-sm font-bold text-[#212121]">Basic Information</h3></div>
@@ -352,7 +362,14 @@ export default function SellerEditProductPage() {
                 <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Stock Quantity</label><Input type="number" min={0} {...form.register("stock")} />{form.formState.errors.stock && <p className="text-[10px] text-[#E53935]">{form.formState.errors.stock.message}</p>}</div>
                 <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Low Stock Threshold</label><Input type="number" min={0} {...form.register("lowStockThreshold")} /></div>
               </div>
-              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Product Status</label><select {...form.register("status")} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]"><option value="DRAFT">Draft</option><option value="PUBLISHED">Published</option><option value="OUT_OF_STOCK">Out of Stock</option></select></div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Submission Status</label>
+                <select {...form.register("status")} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]">
+                  <option value="DRAFT">Save as Draft</option>
+                  <option value="PENDING_APPROVAL">Submit for Approval</option>
+                </select>
+                <p className="text-[10px] text-[#878787]">Approved products edited by seller require re-approval before being visible again.</p>
+              </div>
             </section>
 
             <section className="space-y-4 border-t border-[#F0F0F0] pt-4">

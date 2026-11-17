@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import {
@@ -28,6 +28,27 @@ export const metadata: Metadata = {
     "India's ultimate online shopping destination. Shop best deals on smartphones, 4K TVs, laptops, fashion sneakers, home furniture and daily essentials with fast delivery.",
 };
 
+function normCat(v: any) {
+  return String(v || "").toLowerCase().trim().replace(/&/g, "and").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+}
+
+function matchesCategory(product: any, category: { id?: string; slug?: string; name?: string } | null | undefined) {
+  if (!category) return false;
+  const catId = String((category as any).id || "").trim();
+  const catSlug = normCat((category as any).slug);
+  const catName = normCat((category as any).name);
+  const pId = String(product?.categoryId || "").trim();
+  const pSlug = normCat(product?.categorySlug);
+  const pName = normCat(product?.categoryName || product?.category);
+  if (catId && pId && catId === pId) return true;
+  if (catSlug && pSlug && catSlug === pSlug) return true;
+  if (catName && pName && catName === pName) return true;
+  if (catSlug && pName && pName.includes(catSlug)) return true;
+  if (catSlug && pSlug && pSlug.includes(catSlug)) return true;
+  if (catName && pSlug && pSlug.includes(catName)) return true;
+  return false;
+}
+
 export default async function HomePage() {
   // Parallel asynchronous data loading via services
   const [
@@ -38,7 +59,7 @@ export default async function HomePage() {
     homeProducts,
     featuredProducts,
     latestProducts,
-    electronicsProducts,
+    electronicsProductsRaw,
   ] = await Promise.all([
     categoryService.getCategories(),
     productService.getDealsOfTheDay(5),
@@ -46,14 +67,15 @@ export default async function HomePage() {
     productService.getBestSellingProducts(5),
     productService.getHomeLifestyleProducts(5),
     productService.getFeaturedProducts(5),
-    productService.getProducts({ limit: 10, sortBy: "newest" } as any).then(r => r.data).catch(() => []),
+    productService.getProducts({ limit: 12, sortBy: "newest" } as any).then(r => r.data).catch(() => []),
     productService.getProducts({ category: "electronics", limit: 10, sortBy: "newest" } as any).then(r => r.data).catch(() => []),
   ]);
 
   const safeDeals = bestDeals.length ? bestDeals : latestProducts.slice(0, 5);
   const safeTrending = trendingProducts.length ? trendingProducts : latestProducts.slice(0, 5);
   const safeBestSellers = bestSellers.length ? bestSellers : latestProducts.slice(0, 5);
-  const safeElectronics = electronicsProducts.length ? electronicsProducts : latestProducts.filter((p: any) => /electronic/i.test(String(p.categoryName || p.category || p.categorySlug || ""))).slice(0, 10);
+  const electronicsCategory = (categories || []).find((c: any) => normCat(c.slug) === "electronics" || normCat(c.name).includes("electronic")) || { slug: "electronics", name: "Electronics" } as any;
+  const safeElectronics = (electronicsProductsRaw || []).filter((p: any) => matchesCategory(p, electronicsCategory)).slice(0, 10);
 
   // Promotional Banners
   const heroBanners = MOCK_BANNERS.filter((b) => b.position === "hero");

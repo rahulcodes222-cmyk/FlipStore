@@ -1,70 +1,76 @@
-/**
- * sellerNotificationService — Frontend-only simulated seller notifications.
- */
+import type { Notification } from "@/types";
 
-import { Notification } from "@/types";
-import { MOCK_NOTIFICATIONS } from "@/data";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
-const NOTIFICATION_SESSION_KEY = "my_ecommerce_seller_notifications_v1";
-
-function delay(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    ...init,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json?.success === false) {
+    throw new Error(json?.message || json?.error?.message || `Request failed (${res.status})`);
+  }
+  return (json?.data ?? json) as T;
 }
 
-function getStoredNotifications(sellerId: string): Notification[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(NOTIFICATION_SESSION_KEY);
-    const all = raw ? (JSON.parse(raw) as Record<string, Notification[]>) : {};
-    return all[sellerId] || MOCK_NOTIFICATIONS[sellerId] || [];
-  } catch {
-    return MOCK_NOTIFICATIONS[sellerId] || [];
-  }
+function formatTime(value: any): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  const diff = Date.now() - d.getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return `${days}d ago`;
+  return d.toLocaleString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-function saveStoredNotifications(sellerId: string, notifications: Notification[]) {
-  if (typeof window === "undefined") return;
-  try {
-    const raw = localStorage.getItem(NOTIFICATION_SESSION_KEY);
-    const all = raw ? (JSON.parse(raw) as Record<string, Notification[]>) : {};
-    all[sellerId] = notifications;
-    localStorage.setItem(NOTIFICATION_SESSION_KEY, JSON.stringify(all));
-  } catch {
-    // ignore
-  }
+function mapNotification(n: any): Notification {
+  return {
+    id: String(n?.id || n?._id || ""),
+    type: String(n?.type || "STORE_UPDATE"),
+    category: n?.category,
+    title: String(n?.title || "Notification"),
+    message: String(n?.message || ""),
+    time: formatTime(n?.time || n?.createdAt),
+    status: (String(n?.status || "UNREAD").toUpperCase() === "READ" ? "READ" : "UNREAD") as any,
+    readAt: n?.readAt,
+    link: n?.link || undefined,
+    metadata: n?.metadata || undefined,
+  } as Notification;
 }
 
 export const sellerNotificationService = {
-  async getNotifications(sellerId: string): Promise<Notification[]> {
-    await delay(400);
-    return getStoredNotifications(sellerId);
+  async getNotifications(_sellerId?: string): Promise<Notification[]> {
+    const data = await api<any>("/api/v1/notifications?limit=100");
+    const rows = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+    return rows.map(mapNotification);
   },
 
-  async getUnreadCount(sellerId: string): Promise<number> {
-    await delay(300);
-    return getStoredNotifications(sellerId).filter((n) => n.status === "UNREAD").length;
+  async getUnreadCount(_sellerId?: string): Promise<number> {
+    const res = await fetch(`${API_BASE}/api/v1/notifications?limit=1`, { credentials: "include", headers: { "Content-Type": "application/json" } });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) throw new Error(json?.message || json?.error?.message || "Failed to fetch notifications.");
+    const metaUnread = json?.meta?.unreadCount;
+    if (typeof metaUnread === "number") return metaUnread;
+    const rows = Array.isArray(json?.data) ? json.data : [];
+    return rows.filter((n: any) => String(n?.status).toUpperCase() !== "READ").length;
   },
 
-  async markAsRead(notificationId: string, sellerId: string): Promise<void> {
-    await delay(300);
-    const notifications = getStoredNotifications(sellerId);
-    const updated = notifications.map((n) =>
-      n.id === notificationId ? { ...n, status: "READ" as const } : n
-    );
-    saveStoredNotifications(sellerId, updated);
+  async markAsRead(notificationId: string, _sellerId?: string): Promise<void> {
+    await api<any>(`/api/v1/notifications/${encodeURIComponent(notificationId)}/read`, { method: "PATCH" });
   },
 
-  async markAllAsRead(sellerId: string): Promise<void> {
-    await delay(400);
-    const notifications = getStoredNotifications(sellerId);
-    const updated = notifications.map((n) => ({ ...n, status: "READ" as const }));
-    saveStoredNotifications(sellerId, updated);
+  async markAllAsRead(_sellerId?: string): Promise<void> {
+    await api<any>(`/api/v1/notifications/read-all`, { method: "PATCH" });
   },
 
-  async deleteNotification(notificationId: string, sellerId: string): Promise<void> {
-    await delay(400);
-    const notifications = getStoredNotifications(sellerId);
-    const updated = notifications.filter((n) => n.id !== notificationId);
-    saveStoredNotifications(sellerId, updated);
+  async deleteNotification(notificationId: string, _sellerId?: string): Promise<void> {
+    await api<any>(`/api/v1/notifications/${encodeURIComponent(notificationId)}`, { method: "DELETE" });
   },
 };

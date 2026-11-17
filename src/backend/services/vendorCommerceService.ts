@@ -1,5 +1,5 @@
 ﻿/**
- * Vendor Commerce Service (Part 12)
+ * Vendor Commerce Service (Part 12 + Seller Product Approval workflow)
  * Vendor-scoped product, inventory, order, customer operations.
  * All seller identity is derived from authenticated vendor session.
  */
@@ -12,11 +12,15 @@ import {
   ShipmentModel,
   ReturnRequestModel,
   AddressModel,
+  UserModel,
 } from '@/backend/models';
 import InventoryMovementModel from '@/backend/models/InventoryMovement';
 import { generateSlug } from '@/backend/utils/slug';
 import mongoose from 'mongoose';
 import type { VendorCreateProductInput, VendorUpdateProductInput } from '@/backend/validations/vendorCommerce.schema';
+import { buildApprovalHistoryEntry, syncProductApprovalState, type ApprovalStatus, type PublicationStatus } from '@/backend/utils/productApproval';
+import { notifyAdmins, notifyUser, writeAuditLog } from '@/backend/services/notificationService';
+import { NOTIFICATION_TYPES } from '@/backend/constants/notifications';
 
 function toId(v: any): string {
   if (!v) return '';
@@ -129,7 +133,38 @@ async function syncInventoryForProduct(product: any, actorId?: string, reason = 
   await InventoryModel.deleteMany({ sellerId, productId, sku: { $nin: keepSkus } }).exec();
 }
 
+function assertValidProductId(productId: string) {
+  const id = String(productId || '').trim();
+  if (!id || id === 'undefined' || id === 'null' || !mongoose.isValidObjectId(id)) {
+    throw new Error('Invalid product ID.');
+  }
+  return id;
+}
+
+function assertOwned(product: any, sellerId: string) {
+  if (!product) throw new Error('Product not found.');
+  if (toId(product.sellerId) !== toId(sellerId)) throw new Error('Forbidden');
+}
+
+function sanitizeApprovalHistory(entries: any[] = []) {
+  return (entries || []).map((h: any) => ({
+    action: h.action,
+    fromApprovalStatus: h.fromApprovalStatus,
+    toApprovalStatus: h.toApprovalStatus,
+    fromProductStatus: h.fromProductStatus,
+    toProductStatus: h.toProductStatus,
+    reason: h.reason,
+    comment: h.comment,
+    actorId: h.actorId ? toId(h.actorId) : undefined,
+    actorRole: h.actorRole,
+    actorName: h.actorName,
+    metadata: h.metadata || {},
+    createdAt: h.createdAt,
+  }));
+}
+
 function toVendorProduct(product: any) {
+  syncProductApprovalState(product);
   const images = (product.images || []).map((img: any) => ({ id: img.id, url: img.url, alt: img.alt, isPrimary: !!img.isPrimary }));
   const primary = images.find((i: any) => i.isPrimary) || images[0];
   const variants = (product.variants || []).map((v: any) => ({
@@ -137,10 +172,8 @@ function toVendorProduct(product: any) {
     price: Number(v.price || 0), mrp: Number(v.mrp ?? v.price ?? 0), stock: Number(v.stock || 0), weight: v.weight,
   }));
   const effectiveStock = variants.length ? totalStockFromVariants(variants) : Number(product.stock || 0);
-  let status = product.status;
-  if (status === 'PUBLISHED' && effectiveStock === 0) status = 'OUT_OF_STOCK';
-  if ((product as any).archived) status = 'ARCHIVED';
-  if ((product as any).approvalSubmissionStatus === 'PENDING_APPROVAL' && status !== 'PUBLISHED') status = 'PENDING_APPROVAL';
+  const approvalStatus = String(product.approvalStatus || 'Draft') as ApprovalStatus;
+  const productStatus = String(product.productStatus || 'Inactive') as PublicationStatus;
   return {
     id: toId(product._id || product.id),
     sellerId: toId(product.sellerId),
@@ -164,7 +197,19 @@ function toVendorProduct(product: any) {
     taxPercentage: Number(product.taxPercentage || 0),
     stock: effectiveStock,
     lowStockThreshold: Number(product.lowStockThreshold || 0),
-    status,
+    status: product.status, // legacy
+    approvalStatus,
+    productStatus,
+    rejectionReason: product.rejectionReason || '',
+    adminComment: product.adminComment || '',
+    submittedAt: product.submittedAt || null,
+    reviewedAt: product.reviewedAt || null,
+    reviewedBy: product.reviewedBy ? toId(product.reviewedBy) : null,
+    approvedAt: product.approvedAt || null,
+    approvedBy: product.approvedBy ? toId(product.approvedBy) : null,
+    changesRequestedAt: product.changesRequestedAt || null,
+    rejectedAt: product.rejectedAt || null,
+    approvalHistory: sanitizeApprovalHistory(product.approvalHistory || []),
     images,
     thumbnail: primary?.url || '',
     variants,
@@ -181,31 +226,41 @@ function toVendorProduct(product: any) {
   };
 }
 
-function assertValidProductId(productId: string) {
-  const id = String(productId || '').trim();
-  if (!id || id === 'undefined' || id === 'null' || !mongoose.isValidObjectId(id)) {
-    throw new Error('Invalid product ID.');
-  }
-  return id;
+async function getActorName(userId?: string) {
+  if (!userId || !mongoose.isValidObjectId(userId)) return undefined;
+  const u: any = await UserModel.findById(userId).select('name role').lean().exec();
+  return u?.name || undefined;
 }
 
-function assertOwned(product: any, sellerId: string) {
-  if (!product) throw new Error('Product not found.');
-  if (toId(product.sellerId) !== toId(sellerId)) throw new Error('Forbidden');
+function validateSellerCanSubmit(product: any) {
+  if (!Array.isArray(product.images) || product.images.filter((i: any) => i?.url).length === 0) throw new Error('At least one image is required before submission.');
+  if (!product.name || !product.description || !product.category) throw new Error('Name, category, and description are required before submission.');
+  if (Number(product.price) < 0 || Number(product.mrp) < 0) throw new Error('Price and MRP must be valid.');
+}
+
+async function notifyProductApprovalEvent(params: { sellerId: string; type: string; title: string; message: string; link?: string; metadata?: Record<string, unknown>; dedupeKey?: string; }) {
+  await notifyUser({
+    recipientUserId: params.sellerId,
+    recipientRole: 'vendor',
+    type: params.type,
+    category: 'PRODUCT',
+    title: params.title,
+    message: params.message,
+    link: params.link || '/seller/products',
+    metadata: params.metadata || {},
+    dedupeKey: params.dedupeKey,
+  });
 }
 
 export async function listVendorProducts(sellerId: string, query: any) {
   const filter: any = { sellerId };
   if (query?.search) filter.$text = { $search: String(query.search) };
   if (query?.category) filter.category = query.category;
+  if (query?.approvalStatus) filter.approvalStatus = query.approvalStatus;
   if (query?.status) {
-    if (query.status === 'PUBLISHED') filter.status = 'PUBLISHED';
-    else if (query.status === 'DRAFT') filter.status = 'DRAFT';
-    else if (query.status === 'OUT_OF_STOCK') filter.$or = [{ status: 'OUT_OF_STOCK' }, { stock: 0, status: 'PUBLISHED' }];
+    const st = String(query.status).toUpperCase();
+    if (['PUBLISHED', 'DRAFT', 'OUT_OF_STOCK', 'REJECTED'].includes(st)) filter.status = st;
   }
-  if (query?.stock === 'OUT_OF_STOCK') filter.stock = 0;
-  if (query?.stock === 'LOW_STOCK') { filter.stock = { $gt: 0 }; filter.$expr = { $lte: ['$stock', '$lowStockThreshold'] }; }
-  if (query?.stock === 'IN_STOCK') filter.stock = { $gt: 0 };
 
   const page = Math.max(1, Number(query?.page || 1));
   const limit = Math.min(100, Math.max(1, Number(query?.limit || 20)));
@@ -220,8 +275,18 @@ export async function listVendorProducts(sellerId: string, query: any) {
     ProductModel.countDocuments(filter).exec(),
   ]);
   let data = rows.map(toVendorProduct);
-  if (query?.status === 'ARCHIVED') data = data.filter((d: any) => d.status === 'ARCHIVED');
-  if (query?.status === 'PENDING_APPROVAL') data = data.filter((d: any) => d.status === 'PENDING_APPROVAL');
+
+  // Stock filter on computed effective stock
+  if (query?.stock === 'OUT_OF_STOCK') data = data.filter((d: any) => Number(d.stock || 0) === 0);
+  if (query?.stock === 'LOW_STOCK') data = data.filter((d: any) => Number(d.stock || 0) > 0 && Number(d.stock || 0) <= Number(d.lowStockThreshold || 0));
+  if (query?.stock === 'IN_STOCK') data = data.filter((d: any) => Number(d.stock || 0) > Number(d.lowStockThreshold || 0));
+
+  // Optional UI-facing filters
+  if (query?.status && !['PUBLISHED', 'DRAFT', 'OUT_OF_STOCK', 'REJECTED'].includes(String(query.status).toUpperCase())) {
+    const s = String(query.status);
+    data = data.filter((d: any) => d.approvalStatus === s || d.productStatus === s || d.status === s);
+  }
+
   return { data, total, page, limit, totalPages: Math.ceil(total / limit) || 1, hasMore: page * limit < total };
 }
 
@@ -230,6 +295,51 @@ export async function getVendorProductById(sellerId: string, productId: string) 
   const product = await ProductModel.findById(id).exec();
   assertOwned(product, sellerId);
   return toVendorProduct(product);
+}
+
+function applySellerEditableFields(product: any, input: Partial<VendorCreateProductInput & VendorUpdateProductInput>, sellerId: string) {
+  if (input.name !== undefined) product.name = String(input.name).trim();
+  if (input.slug !== undefined || input.name !== undefined) product.slug = input.slug || product.slug || generateSlug(product.name);
+  if (input.sku !== undefined) product.sku = String(input.sku).trim().toUpperCase();
+  if (input.barcode !== undefined) product.barcode = input.barcode || '';
+  if (input.category !== undefined) product.category = input.category;
+  if ((input as any).categoryId !== undefined) product.categoryId = (input as any).categoryId || undefined;
+  if (input.subcategory !== undefined) product.subcategory = input.subcategory || '';
+  if (input.brand !== undefined) product.brand = input.brand || '';
+  if ((input as any).brandId !== undefined) product.brandId = (input as any).brandId || undefined;
+  if (input.description !== undefined) product.description = input.description;
+  if (input.shortDescription !== undefined) product.shortDescription = input.shortDescription || '';
+  if (input.highlights !== undefined) product.highlights = input.highlights || [];
+  if (input.specifications !== undefined) product.specifications = input.specifications || {};
+  if (input.price !== undefined) product.price = Number(input.price);
+  if (input.mrp !== undefined) product.mrp = Number(input.mrp);
+  if (product.price > product.mrp) throw new Error('Selling price cannot exceed MRP.');
+  product.discountPercentage = input.discountPercentage !== undefined ? Number(input.discountPercentage) : computeDiscount(Number(product.price || 0), Number(product.mrp || 0));
+  if (input.taxPercentage !== undefined) product.taxPercentage = Number(input.taxPercentage);
+  if (input.lowStockThreshold !== undefined) product.lowStockThreshold = Math.max(0, Number(input.lowStockThreshold));
+  if (input.images !== undefined) {
+    const imgs = normalizeImages(input.images || [], product.name);
+    if (!imgs.length) throw new Error('At least one image is required.');
+    product.images = imgs;
+  }
+  if (input.variants !== undefined) {
+    const variants = normalizeVariants(input.variants || [], product.sku);
+    const seen = new Set<string>([String(product.sku).toUpperCase()]);
+    for (const v of variants) {
+      const vs = String(v.sku).toUpperCase();
+      if (seen.has(vs)) throw new Error(`Duplicate SKU: ${vs}`);
+      seen.add(vs);
+    }
+    product.variants = variants;
+  }
+  if (input.stock !== undefined && !(product.variants || []).length) product.stock = Math.max(0, Number(input.stock));
+  const effectiveStock = (product.variants || []).length ? totalStockFromVariants(product.variants) : Math.max(0, Number(product.stock || 0));
+  product.stock = effectiveStock;
+  if (input.seoTitle !== undefined) product.seoTitle = input.seoTitle || '';
+  if (input.seoDescription !== undefined) product.seoDescription = input.seoDescription || '';
+  if (input.isFreeDelivery !== undefined) product.isFreeDelivery = !!input.isFreeDelivery;
+  if (input.estimatedDeliveryDays !== undefined) product.estimatedDeliveryDays = Math.max(0, Number(input.estimatedDeliveryDays));
+  return product;
 }
 
 export async function createVendorProduct(sellerId: string, actorId: string, input: VendorCreateProductInput) {
@@ -249,135 +359,252 @@ export async function createVendorProduct(sellerId: string, actorId: string, inp
   const mrp = Number(input.mrp);
   const price = Number(input.price);
   if (price > mrp) throw new Error('Selling price cannot exceed MRP.');
-  const requestedStatus = input.status || 'DRAFT';
-  let status: any = stock === 0 ? 'OUT_OF_STOCK' : 'DRAFT';
-  let approvalSubmissionStatus = 'DRAFT';
-  let archived = false;
-  if (requestedStatus === 'PUBLISHED' || requestedStatus === 'PENDING_APPROVAL') {
-    status = stock === 0 ? 'OUT_OF_STOCK' : 'DRAFT';
-    approvalSubmissionStatus = 'PENDING_APPROVAL';
-  } else if (requestedStatus === 'ARCHIVED') {
-    archived = true;
-    approvalSubmissionStatus = 'ARCHIVED';
-    status = 'DRAFT';
-  } else if (requestedStatus === 'OUT_OF_STOCK') {
-    status = 'OUT_OF_STOCK';
-    approvalSubmissionStatus = 'DRAFT';
-  } else {
-    status = stock === 0 ? 'OUT_OF_STOCK' : 'DRAFT';
-    approvalSubmissionStatus = 'DRAFT';
-  }
+
+  const submit = String(input.status || '').toUpperCase() === 'PENDING_APPROVAL';
+  const now = new Date();
+  const approvalStatus: ApprovalStatus = submit ? 'Pending Approval' : 'Draft';
+  const productStatus: PublicationStatus = 'Inactive';
 
   const product: any = await ProductModel.create({
-    sellerId, name: input.name.trim(), slug, sku, barcode: input.barcode || '', category: input.category,
-    categoryId: input.categoryId || undefined, subcategory: input.subcategory || '', brand: input.brand || '', brandId: input.brandId || undefined,
-    description: input.description, shortDescription: input.shortDescription || '', highlights: input.highlights || [], specifications: input.specifications || {},
-    price, mrp, discountPercentage: input.discountPercentage ?? computeDiscount(price, mrp), taxPercentage: input.taxPercentage ?? 0,
-    stock, lowStockThreshold: Math.max(0, Number(input.lowStockThreshold || 0)), status, images, variants,
-    seoTitle: input.seoTitle || '', seoDescription: input.seoDescription || '', isAssured: false, isFreeDelivery: !!input.isFreeDelivery,
+    sellerId,
+    name: input.name.trim(),
+    slug,
+    sku,
+    barcode: input.barcode || '',
+    category: input.category,
+    categoryId: input.categoryId || undefined,
+    subcategory: input.subcategory || '',
+    brand: input.brand || '',
+    brandId: input.brandId || undefined,
+    description: input.description,
+    shortDescription: input.shortDescription || '',
+    highlights: input.highlights || [],
+    specifications: input.specifications || {},
+    price,
+    mrp,
+    discountPercentage: input.discountPercentage ?? computeDiscount(price, mrp),
+    taxPercentage: input.taxPercentage ?? 0,
+    stock,
+    lowStockThreshold: Math.max(0, Number(input.lowStockThreshold || 0)),
+    status: submit ? 'DRAFT' : 'DRAFT',
+    approvalStatus,
+    productStatus,
+    submittedAt: submit ? now : undefined,
+    approvalHistory: [buildApprovalHistoryEntry({
+      action: submit ? 'SUBMITTED' : 'DRAFT_SAVED',
+      fromApprovalStatus: undefined,
+      toApprovalStatus: approvalStatus,
+      fromProductStatus: undefined,
+      toProductStatus: productStatus,
+      actorId,
+      actorRole: 'vendor',
+    })],
+    images,
+    variants,
+    seoTitle: input.seoTitle || '',
+    seoDescription: input.seoDescription || '',
+    isAssured: false,
+    isFreeDelivery: !!input.isFreeDelivery,
     estimatedDeliveryDays: Math.max(0, Number(input.estimatedDeliveryDays ?? 3)),
   } as any);
-  (product as any).approvalSubmissionStatus = approvalSubmissionStatus;
-  (product as any).archived = archived;
+
+  syncProductApprovalState(product);
   await product.save();
   await syncInventoryForProduct(product, actorId, 'product_created');
+
+  if (submit) {
+    await notifyAdmins({
+      type: NOTIFICATION_TYPES.PRODUCT_SUBMITTED_FOR_APPROVAL,
+      category: 'PRODUCT',
+      title: 'Product submitted for approval',
+      message: `${product.name} was submitted for approval by a seller.`,
+      link: `/admin/products/approvals/${toId(product._id)}`,
+      metadata: { productId: toId(product._id), sellerId },
+      dedupeKey: `product-submitted:${toId(product._id)}:${product.submittedAt?.toISOString?.() || Date.now()}`,
+    });
+    await writeAuditLog({
+      actorId,
+      actorRole: 'vendor',
+      action: 'product_submitted_for_approval',
+      resourceType: 'product',
+      resourceId: toId(product._id),
+      message: 'Seller submitted product for approval',
+      after: { approvalStatus, productStatus },
+      metadata: { sellerId },
+    });
+  }
+
   return toVendorProduct(product);
 }
 
 export async function updateVendorProduct(sellerId: string, actorId: string, productId: string, input: VendorUpdateProductInput) {
   const id = assertValidProductId(productId);
-  const product: any = await ProductModel.findById(productId).exec();
+  const product: any = await ProductModel.findById(id).exec();
   assertOwned(product, sellerId);
+  syncProductApprovalState(product);
 
-  if (input.name !== undefined) product.name = input.name.trim();
-  if (input.slug !== undefined || input.name !== undefined) product.slug = await ensureUniqueProductSlug(input.slug || product.name, sellerId, id);
-  if (input.sku !== undefined) product.sku = await ensureUniqueSku(input.sku, sellerId, id);
-  if (input.barcode !== undefined) product.barcode = input.barcode || '';
-  if (input.category !== undefined) product.category = input.category;
-  if (input.categoryId !== undefined) product.categoryId = input.categoryId || undefined;
-  if (input.subcategory !== undefined) product.subcategory = input.subcategory || '';
-  if (input.brand !== undefined) product.brand = input.brand || '';
-  if (input.brandId !== undefined) product.brandId = input.brandId || undefined;
-  if (input.description !== undefined) product.description = input.description;
-  if (input.shortDescription !== undefined) product.shortDescription = input.shortDescription || '';
-  if (input.highlights !== undefined) product.highlights = input.highlights || [];
-  if (input.specifications !== undefined) product.specifications = input.specifications || {};
-  if (input.price !== undefined) product.price = Number(input.price);
-  if (input.mrp !== undefined) product.mrp = Number(input.mrp);
-  if (product.price > product.mrp) throw new Error('Selling price cannot exceed MRP.');
-  product.discountPercentage = input.discountPercentage !== undefined ? Number(input.discountPercentage) : computeDiscount(product.price, product.mrp);
-  if (input.taxPercentage !== undefined) product.taxPercentage = Number(input.taxPercentage);
-  if (input.lowStockThreshold !== undefined) product.lowStockThreshold = Math.max(0, Number(input.lowStockThreshold));
-  if (input.images !== undefined) {
-    const imgs = normalizeImages(input.images || [], product.name);
-    if (!imgs.length) throw new Error('At least one image is required.');
-    product.images = imgs;
-  }
-  if (input.variants !== undefined) {
-    const variants = normalizeVariants(input.variants || [], product.sku);
-    const seen = new Set<string>([String(product.sku).toUpperCase()]);
-    for (const v of variants) {
-      const vs = String(v.sku).toUpperCase();
-      if (seen.has(vs)) throw new Error(`Duplicate SKU: ${vs}`);
-      seen.add(vs);
-      await ensureUniqueSku(vs, sellerId, id);
-    }
-    product.variants = variants;
-  }
-  if (input.stock !== undefined && !(product.variants || []).length) product.stock = Math.max(0, Number(input.stock));
-  const effectiveStock = (product.variants || []).length ? totalStockFromVariants(product.variants) : Math.max(0, Number(product.stock || 0));
-  product.stock = effectiveStock;
+  const fromApproval = product.approvalStatus as ApprovalStatus;
+  const fromPublication = product.productStatus as PublicationStatus;
+  const now = new Date();
 
-  const requestedStatus = input.status;
-  if (requestedStatus === 'ARCHIVED') {
-    (product as any).archived = true;
-    (product as any).approvalSubmissionStatus = 'ARCHIVED';
-    product.status = 'DRAFT';
-  } else if (requestedStatus === 'PENDING_APPROVAL' || requestedStatus === 'PUBLISHED') {
-    (product as any).archived = false;
-    (product as any).approvalSubmissionStatus = 'PENDING_APPROVAL';
-    if (product.status !== 'PUBLISHED') product.status = effectiveStock === 0 ? 'OUT_OF_STOCK' : 'DRAFT';
-  } else if (requestedStatus === 'OUT_OF_STOCK') {
-    (product as any).archived = false;
-    (product as any).approvalSubmissionStatus = 'DRAFT';
-    if (product.status !== 'PUBLISHED') product.status = 'OUT_OF_STOCK';
-  } else if (requestedStatus === 'DRAFT') {
-    (product as any).archived = false;
-    (product as any).approvalSubmissionStatus = 'DRAFT';
-    if (product.status !== 'PUBLISHED') product.status = effectiveStock === 0 ? 'OUT_OF_STOCK' : 'DRAFT';
-  } else if (product.status !== 'PUBLISHED') {
-    product.status = effectiveStock === 0 ? 'OUT_OF_STOCK' : (product.status === 'OUT_OF_STOCK' ? 'DRAFT' : product.status);
+  // Seller can edit draft/rejected/changes-requested; editing approved resets to draft and requires resubmission
+  const editableStates: ApprovalStatus[] = ['Draft', 'Rejected', 'Changes Requested', 'Approved'];
+  if (!editableStates.includes(fromApproval)) {
+    throw new Error('Product cannot be edited in its current approval state.');
   }
 
-  if (input.seoTitle !== undefined) product.seoTitle = input.seoTitle || '';
-  if (input.seoDescription !== undefined) product.seoDescription = input.seoDescription || '';
-  if (input.isFreeDelivery !== undefined) product.isFreeDelivery = !!input.isFreeDelivery;
-  if (input.estimatedDeliveryDays !== undefined) product.estimatedDeliveryDays = Math.max(0, Number(input.estimatedDeliveryDays));
+  // Slug/sku uniqueness checks if changing
+  if (input.slug !== undefined || input.name !== undefined) {
+    product.slug = await ensureUniqueProductSlug(input.slug || input.name || product.name, sellerId, id);
+  }
+  if (input.sku !== undefined) {
+    product.sku = await ensureUniqueSku(input.sku, sellerId, id);
+  }
+  applySellerEditableFields(product, input, sellerId);
 
+  // Variant SKU uniqueness after normalization
+  const variants = Array.isArray(product.variants) ? product.variants : [];
+  const seen = new Set<string>([String(product.sku).toUpperCase()]);
+  for (const v of variants) {
+    const vs = String(v.sku).toUpperCase();
+    if (seen.has(vs)) throw new Error(`Duplicate SKU: ${vs}`);
+    seen.add(vs);
+    await ensureUniqueSku(vs, sellerId, id);
+  }
+
+  const wantsSubmit = String(input.status || '').toUpperCase() === 'PENDING_APPROVAL';
+  let toApproval: ApprovalStatus = fromApproval;
+  let action = 'DRAFT_SAVED';
+
+  if (fromApproval === 'Approved') {
+    // Any seller edit to approved listing requires resubmission
+    toApproval = wantsSubmit ? 'Pending Approval' : 'Draft';
+    action = wantsSubmit ? 'RESUBMITTED' : 'APPROVED_EDITED_REQUIRES_REVIEW';
+    product.rejectionReason = wantsSubmit ? '' : product.rejectionReason || '';
+    product.adminComment = wantsSubmit ? '' : product.adminComment || '';
+  } else if (wantsSubmit) {
+    toApproval = 'Pending Approval';
+    action = (fromApproval === 'Rejected' || fromApproval === 'Changes Requested') ? 'RESUBMITTED' : 'SUBMITTED';
+  } else {
+    toApproval = fromApproval;
+  }
+
+  if (wantsSubmit) validateSellerCanSubmit(product);
+
+  const toPublication: PublicationStatus = 'Inactive';
+  product.approvalStatus = toApproval;
+  product.productStatus = toPublication;
+  product.status = 'DRAFT';
+  if (wantsSubmit) {
+    product.submittedAt = now;
+    product.changesRequestedAt = undefined;
+    product.rejectedAt = undefined;
+  }
+  // Keep approved timestamps for history; product is moved out of approved/public state on seller edit.
+  if (fromApproval === 'Approved' && toApproval !== 'Pending Approval') {
+    // edited approved listing saved as draft pending resubmission
+  }
+
+  product.approvalHistory = [...(product.approvalHistory || []), buildApprovalHistoryEntry({
+    action,
+    fromApprovalStatus: fromApproval,
+    toApprovalStatus: toApproval,
+    fromProductStatus: fromPublication,
+    toProductStatus: toPublication,
+    actorId,
+    actorRole: 'vendor',
+    comment: wantsSubmit ? 'Product submitted for review' : 'Product details updated by seller',
+  })];
+
+  syncProductApprovalState(product);
   await product.save();
   await syncInventoryForProduct(product, actorId, 'product_updated');
+
+  if (wantsSubmit) {
+    await notifyAdmins({
+      type: NOTIFICATION_TYPES.PRODUCT_SUBMITTED_FOR_APPROVAL,
+      category: 'PRODUCT',
+      title: action === 'RESUBMITTED' ? 'Product resubmitted for approval' : 'Product submitted for approval',
+      message: `${product.name} was ${action === 'RESUBMITTED' ? 'resubmitted' : 'submitted'} for approval.`,
+      link: `/admin/products/approvals/${id}`,
+      metadata: { productId: id, sellerId },
+      dedupeKey: `product-submitted:${id}:${now.toISOString()}`,
+    });
+    await writeAuditLog({
+      actorId,
+      actorRole: 'vendor',
+      action: action === 'RESUBMITTED' ? 'product_resubmitted_for_approval' : 'product_submitted_for_approval',
+      resourceType: 'product',
+      resourceId: id,
+      before: { approvalStatus: fromApproval, productStatus: fromPublication },
+      after: { approvalStatus: toApproval, productStatus: toPublication },
+      metadata: { sellerId },
+    });
+  }
+
   return toVendorProduct(product);
 }
 
 export async function archiveVendorProduct(sellerId: string, productId: string) {
   const id = assertValidProductId(productId);
-  const product: any = await ProductModel.findById(productId).exec();
+  const product: any = await ProductModel.findById(id).exec();
   assertOwned(product, sellerId);
-  (product as any).archived = true;
-  (product as any).approvalSubmissionStatus = 'ARCHIVED';
-  if (product.status !== 'PUBLISHED') product.status = 'DRAFT'; else product.status = 'DRAFT';
+  syncProductApprovalState(product);
+  const fromApproval = product.approvalStatus;
+  const fromPublication = product.productStatus;
+  // Vendor "archive" in existing UI: deactivate listing without changing approval decision except visibility
+  if (fromApproval === 'Approved') {
+    product.productStatus = 'Inactive';
+    product.approvalHistory = [...(product.approvalHistory || []), buildApprovalHistoryEntry({ action: 'DEACTIVATED', fromApprovalStatus: fromApproval, toApprovalStatus: fromApproval, fromProductStatus: fromPublication, toProductStatus: 'Inactive', actorId: sellerId, actorRole: 'vendor' })];
+  } else {
+    // keep as draft/inactive
+    product.productStatus = 'Inactive';
+  }
+  syncProductApprovalState(product);
   await product.save();
-  return { id, status: 'ARCHIVED' };
+  return { id, approvalStatus: product.approvalStatus, productStatus: product.productStatus };
 }
 
 export async function submitVendorProductForApproval(sellerId: string, productId: string) {
   const id = assertValidProductId(productId);
-  const product: any = await ProductModel.findById(productId).exec();
+  const product: any = await ProductModel.findById(id).exec();
   assertOwned(product, sellerId);
-  (product as any).archived = false;
-  (product as any).approvalSubmissionStatus = 'PENDING_APPROVAL';
-  if (product.status !== 'PUBLISHED') product.status = 'DRAFT';
+  syncProductApprovalState(product);
+  const fromApproval = product.approvalStatus as ApprovalStatus;
+  const fromPublication = product.productStatus as PublicationStatus;
+  if (!['Draft', 'Rejected', 'Changes Requested', 'Approved'].includes(fromApproval)) {
+    throw new Error('Product cannot be submitted in its current state.');
+  }
+  validateSellerCanSubmit(product);
+  const action = (fromApproval === 'Rejected' || fromApproval === 'Changes Requested' || fromApproval === 'Approved') ? 'RESUBMITTED' : 'SUBMITTED';
+  product.approvalStatus = 'Pending Approval';
+  product.productStatus = 'Inactive';
+  product.submittedAt = new Date();
+  product.rejectionReason = '';
+  product.adminComment = '';
+  product.approvalHistory = [...(product.approvalHistory || []), buildApprovalHistoryEntry({
+    action,
+    fromApprovalStatus: fromApproval,
+    toApprovalStatus: 'Pending Approval',
+    fromProductStatus: fromPublication,
+    toProductStatus: 'Inactive',
+    actorId: sellerId,
+    actorRole: 'vendor',
+  })];
+  syncProductApprovalState(product);
   await product.save();
+
+  await notifyAdmins({
+    type: NOTIFICATION_TYPES.PRODUCT_SUBMITTED_FOR_APPROVAL,
+    category: 'PRODUCT',
+    title: action === 'RESUBMITTED' ? 'Product resubmitted for approval' : 'Product submitted for approval',
+    message: `${product.name} is awaiting admin review.`,
+    link: `/admin/products/approvals/${id}`,
+    metadata: { productId: id, sellerId },
+    dedupeKey: `product-submitted:${id}:${product.submittedAt.toISOString()}`,
+  });
+  await writeAuditLog({ actorId: sellerId, actorRole: 'vendor', action: action === 'RESUBMITTED' ? 'product_resubmitted_for_approval' : 'product_submitted_for_approval', resourceType: 'product', resourceId: id, before: { approvalStatus: fromApproval, productStatus: fromPublication }, after: { approvalStatus: 'Pending Approval', productStatus: 'Inactive' }, metadata: { sellerId } });
+
   return toVendorProduct(product);
 }
 
@@ -436,7 +663,7 @@ export async function listVendorInventory(sellerId: string, query: any) {
 
 export async function updateVendorInventory(sellerId: string, actorId: string, productId: string, input: { stock?: number; delta?: number; lowStockThreshold?: number; variantId?: string; sku?: string; reason?: string }) {
   const id = assertValidProductId(productId);
-  const product: any = await ProductModel.findById(productId).exec();
+  const product: any = await ProductModel.findById(id).exec();
   assertOwned(product, sellerId);
   const variants = Array.isArray(product.variants) ? product.variants : [];
   if (input.lowStockThreshold !== undefined) product.lowStockThreshold = Math.max(0, Number(input.lowStockThreshold));
@@ -457,10 +684,7 @@ export async function updateVendorInventory(sellerId: string, actorId: string, p
 
   if (targetVariant) targetVariant.stock = next; else product.stock = next;
   product.stock = variants.length ? totalStockFromVariants(variants) : next;
-  if (!variants.length) {
-    if (next === 0 && product.status === 'PUBLISHED') product.status = 'OUT_OF_STOCK';
-    if (next > 0 && product.status === 'OUT_OF_STOCK') product.status = 'PUBLISHED';
-  }
+  syncProductApprovalState(product);
   await product.save();
 
   const sku = targetVariant ? String(targetVariant.sku).toUpperCase() : String(product.sku).toUpperCase();
@@ -498,7 +722,19 @@ export async function listVendorInventoryHistory(sellerId: string, query: any) {
 
 function maskCustomerAddress(addr: any) {
   if (!addr) return null;
-  return { name: addr.name, city: addr.city, state: addr.state, pincode: addr.pincode, locality: addr.locality };
+  return {
+    id: addr._id ? String(addr._id) : addr.id || '',
+    name: addr.name || '',
+    phone: addr.phone || '',
+    pincode: addr.pincode || '',
+    locality: addr.locality || '',
+    street: addr.street || '',
+    city: addr.city || '',
+    state: addr.state || '',
+    landmark: addr.landmark || '',
+    type: addr.type || 'home',
+    isDefault: !!addr.isDefault,
+  };
 }
 
 export async function listVendorOrders(sellerId: string, query: any) {
@@ -543,7 +779,7 @@ export async function getVendorOrderDetail(sellerId: string, subOrderId: string)
   const returns = await ReturnRequestModel.find({ $or: [{ subOrderId: String(sub._id) }, { orderId: order._id, sellerId }] }).sort({ createdAt: -1 }).lean().exec();
   return {
     id: String(sub._id), parentOrderId: String(order._id), orderId: String(order._id), orderNumber: order.orderNumber, subOrderNumber: sub.subOrderNumber,
-    customerId: String(order.customerId), customerName: order.customerName,
+    customerId: String(order.customerId), customerName: order.customerName, customerEmail: order.customerEmail || '', customerPhone: order.customerPhone || addr?.phone || '',
     items: (sub.items || []).map((it: any) => ({ id: it.id, productId: toId(it.productId), title: it.title, thumbnail: it.thumbnail || '', price: Number(it.price || 0), mrp: Number(it.mrp || it.price || 0), quantity: Number(it.quantity || 1), selectedVariants: it.selectedVariants || {} })),
     shippingAddress: maskCustomerAddress(addr), paymentMethod: sub.paymentMethod || order.paymentMethod, paymentStatus: sub.paymentStatus || order.paymentStatus,
     orderStatus: sub.orderStatus, pricing: sub.pricing || order.pricing, placedAt: sub.placedAt || order.placedAt, estimatedDelivery: sub.estimatedDelivery || order.estimatedDelivery, deliveredAt: sub.deliveredAt,
@@ -582,5 +818,6 @@ export async function listVendorCustomers(sellerId: string, query: any) {
   const total = data.length;
   return { data: data.slice((page - 1) * limit, page * limit), pagination: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 } };
 }
+
 
 

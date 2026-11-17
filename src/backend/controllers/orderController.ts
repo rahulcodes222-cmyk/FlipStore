@@ -173,7 +173,17 @@ export const orderInvoiceGET = withDatabase(
     const { id } = (await context?.params) || { id: '' };
     try {
       const invoice = await getInvoice(id, req.user.id, req.user.role);
-      return NextResponse.json(createSuccessResponse(invoice, { message: 'Invoice fetched.' }), { status: HTTP_STATUS.OK });
+      const { renderInvoicePdf } = await import('@/backend/utils/invoicePdf');
+      const pdf = renderInvoicePdf(invoice as any);
+      const filename = `${String((invoice as any)?.invoiceNumber || `INV-${id}`)}.pdf`.replace(/[^a-zA-Z0-9._-]+/g, '_');
+      return new NextResponse(new Uint8Array(pdf), {
+        status: HTTP_STATUS.OK,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': `attachment; filename="${filename}"`,
+          'Cache-Control': 'private, no-store',
+        },
+      });
     } catch (error) {
       return serviceError(error, 'Failed to fetch invoice.', 'INVOICE_FETCH_FAILED');
     }

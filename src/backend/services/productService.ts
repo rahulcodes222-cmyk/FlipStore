@@ -19,12 +19,27 @@ import type {
   ProductSearchInput,
 } from '@/backend/validations/product.schema';
 import { generateSlug } from '@/backend/utils/slug';
+import { buildApprovalHistoryEntry, isPubliclyVisibleProduct, publicProductVisibilityMongoFilter, syncProductApprovalState } from '@/backend/utils/productApproval';
+import { notifyAdmins, writeAuditLog } from '@/backend/services/notificationService';
+import { NOTIFICATION_TYPES } from '@/backend/constants/notifications';
+
+function toId(v: any): string {
+  if (!v) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'object' && v._id) return String(v._id);
+  return String(v);
+}
+
+function publicVisibilityFilter() {
+  return publicProductVisibilityMongoFilter();
+}
 
 /**
  * Normalize a backend product document into a plain object
  * safe for frontend consumption.
  */
 function normalizeProduct(doc: IProductDocument): Record<string, unknown> {
+  syncProductApprovalState(doc as any);
   const variants = (doc.variants || []).map((v: IProductVariantDocument) => ({
     id: v.id,
     productId: v.productId,
@@ -64,6 +79,16 @@ function normalizeProduct(doc: IProductDocument): Record<string, unknown> {
     stock: doc.stock,
     lowStockThreshold: doc.lowStockThreshold,
     status: doc.status,
+    approvalStatus: (doc as any).approvalStatus,
+    productStatus: (doc as any).productStatus,
+    rejectionReason: (doc as any).rejectionReason || '',
+    adminComment: (doc as any).adminComment || '',
+    submittedAt: (doc as any).submittedAt || null,
+    reviewedAt: (doc as any).reviewedAt || null,
+    reviewedBy: (doc as any).reviewedBy ? toId((doc as any).reviewedBy) : null,
+    approvedAt: (doc as any).approvedAt || null,
+    approvedBy: (doc as any).approvedBy ? toId((doc as any).approvedBy) : null,
+    approvalHistory: Array.isArray((doc as any).approvalHistory) ? (doc as any).approvalHistory : [],
     images: doc.images.map((img) => ({
       id: img.id,
       url: img.url,
@@ -119,6 +144,12 @@ export async function createProduct(
     sku = `${baseSku}-${ki++}`;
   }
 
+  const submitForApproval = (data as any).status === 'PUBLISHED' || (data as any).submitForApproval === true;
+  const stock = Number.isFinite(Number(data.stock)) ? Math.max(0, Math.floor(Number(data.stock))) : 0;
+  const approvalStatus = submitForApproval ? 'Pending Approval' : 'Draft';
+  const productStatus = 'Inactive';
+  const now = new Date();
+
   const productData: Record<string, unknown> = {
     sellerId,
     name: String(data.name || '').trim(),
@@ -138,19 +169,45 @@ export async function createProduct(
     mrp: Number(data.mrp) || Number(data.price) || 0,
     discountPercentage: data.discountPercentage ?? 0,
     taxPercentage: data.taxPercentage ?? 0,
-    stock: Number.isFinite(Number(data.stock)) ? Math.max(0, Math.floor(Number(data.stock))) : 0,
+    stock,
     lowStockThreshold: data.lowStockThreshold ?? 0,
-    status: data.status || 'PUBLISHED',
+    // legacy field kept for compatibility; public visibility is enforced by approvalStatus+productStatus
+    status: 'DRAFT',
+    approvalStatus,
+    productStatus,
+    submittedAt: submitForApproval ? now : undefined,
+    approvalHistory: [buildApprovalHistoryEntry({
+      action: submitForApproval ? 'SUBMITTED' : 'DRAFT_SAVED',
+      fromApprovalStatus: undefined,
+      toApprovalStatus: approvalStatus,
+      fromProductStatus: undefined,
+      toProductStatus: productStatus,
+      actorId: sellerId,
+      actorRole: 'vendor',
+    })],
     images: Array.isArray(data.images) ? data.images : [],
     variants: Array.isArray(data.variants) ? data.variants : [],
     seoTitle: data.seoTitle || '',
     seoDescription: data.seoDescription || '',
-    isAssured: data.isAssured ?? false,
+    isAssured: false, // admin-only badge
     isFreeDelivery: data.isFreeDelivery ?? false,
     estimatedDeliveryDays: data.estimatedDeliveryDays ?? 3,
   };
 
   const product = await ProductModel.create(productData);
+  syncProductApprovalState(product as any);
+  if (submitForApproval) {
+    await notifyAdmins({
+      type: NOTIFICATION_TYPES.PRODUCT_SUBMITTED_FOR_APPROVAL,
+      category: 'PRODUCT',
+      title: 'Product submitted for approval',
+      message: `${(product as any).name} was submitted for approval.`,
+      link: `/admin/products/approvals/${(product as any).id || (product as any)._id}`,
+      metadata: { productId: String((product as any)._id || (product as any).id), sellerId },
+      dedupeKey: `product-submitted:${String((product as any)._id || (product as any).id)}:${now.toISOString()}`,
+    }).catch(() => {});
+    await writeAuditLog({ actorId: sellerId, actorRole: 'vendor', action: 'product_submitted_for_approval', resourceType: 'product', resourceId: String((product as any)._id || (product as any).id), after: { approvalStatus, productStatus } }).catch(() => {});
+  }
   return product;
 }
 
@@ -160,21 +217,33 @@ export async function createProduct(
 export async function getProductById(
   productId: string,
   sellerId?: string,
+  opts?: { publicOnly?: boolean },
 ): Promise<IProductDocument | null> {
   const query: Record<string, unknown> = { _id: productId };
   if (sellerId) {
     query.sellerId = sellerId;
   }
+  if (opts?.publicOnly) {
+    Object.assign(query, publicVisibilityFilter());
+  }
   const product = await ProductModel.findOne(query).exec();
-  return product || null;
+  if (!product) return null;
+  syncProductApprovalState(product as any);
+  if (opts?.publicOnly && !isPubliclyVisibleProduct(product)) return null;
+  return product;
 }
 
 /**
  * Get product by slug.
  */
-export async function getProductBySlug(slug: string): Promise<IProductDocument | null> {
-  const product = await ProductModel.findOne({ slug }).exec();
-  return product || null;
+export async function getProductBySlug(slug: string, opts?: { publicOnly?: boolean }): Promise<IProductDocument | null> {
+  const query: Record<string, unknown> = { slug };
+  if (opts?.publicOnly) Object.assign(query, publicVisibilityFilter());
+  const product = await ProductModel.findOne(query).exec();
+  if (!product) return null;
+  syncProductApprovalState(product as any);
+  if (opts?.publicOnly && !isPubliclyVisibleProduct(product)) return null;
+  return product;
 }
 
 /**
@@ -184,6 +253,7 @@ export async function getProductBySlug(slug: string): Promise<IProductDocument |
 export async function getProducts(
   query: ProductQueryInput & Record<string, any>,
   sellerId?: string,
+  opts?: { adminView?: boolean; publicOnly?: boolean },
 ): Promise<{ data: IProductDocument[]; total: number; page: number; limit: number; totalPages: number; hasMore: boolean }> {
   const filter: Record<string, unknown> = {};
 
@@ -227,12 +297,17 @@ export async function getProducts(
     filter.brand = new RegExp(`^${String(query.brand).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
   }
 
+  // Approval/publication filters (admin/vendor management)
+  if (query.approvalStatus) filter.approvalStatus = query.approvalStatus;
+  if (query.productStatus) filter.productStatus = query.productStatus;
+
   // Status filter
   if (query.status) {
+    // admin/vendor contexts may pass explicit legacy status
     filter.status = query.status;
-  } else if (!sellerId) {
-    // Public storefront listings should not expose drafts/rejected items
-    filter.status = 'PUBLISHED';
+  } else if (opts?.publicOnly || (!sellerId && !opts?.adminView)) {
+    // Public storefront listings: only approved + active + in stock (with legacy compatibility)
+    Object.assign(filter, publicVisibilityFilter());
   }
 
   // Stock filter
@@ -326,7 +401,7 @@ export async function getProductsByCategory(
 export async function searchProducts(
   query: ProductSearchInput,
 ): Promise<{ data: IProductDocument[]; total: number; page: number; limit: number; totalPages: number; hasMore: boolean }> {
-  const filter: Record<string, unknown> = { status: 'PUBLISHED' };
+  const filter: Record<string, unknown> = { ...publicVisibilityFilter() };
 
   // Text search across name, description, shortDescription
   if (query.q) {
@@ -473,7 +548,14 @@ export async function updateProduct(
   if (data.taxPercentage !== undefined) (product as any).taxPercentage = Number(data.taxPercentage);
   if (data.stock !== undefined) (product as any).stock = Math.max(0, Math.floor(Number(data.stock)));
   if (data.lowStockThreshold !== undefined) (product as any).lowStockThreshold = Number(data.lowStockThreshold);
-  if (data.status !== undefined) (product as any).status = data.status;
+  if (data.status !== undefined) {
+    // Prevent bypassing approval workflow from generic product update endpoints.
+    // Use vendor/admin approval-specific flows instead.
+  }
+  // Seller/admin generic edits must not grant publication approval
+  if ((data as any).isAssured !== undefined) {
+    // Only allow admin to set assured via publish/admin flows; ignore here for safety
+  }
   if (data.images !== undefined) (product as any).images = data.images as any;
   if (data.variants !== undefined) (product as any).variants = data.variants as any;
   if (data.seoTitle !== undefined) (product as any).seoTitle = data.seoTitle;
@@ -482,6 +564,7 @@ export async function updateProduct(
   if (data.isFreeDelivery !== undefined) (product as any).isFreeDelivery = !!data.isFreeDelivery;
   if (data.estimatedDeliveryDays !== undefined) (product as any).estimatedDeliveryDays = Number(data.estimatedDeliveryDays);
 
+  syncProductApprovalState(product as any);
   const updated = await product.save();
   return updated;
 }
@@ -507,6 +590,7 @@ export async function deleteProduct(
 
 /**
  * Publish or unpublish a product.
+ * Kept for admin compatibility but restricted to approved products.
  */
 export async function publishProduct(
   productId: string,
@@ -514,10 +598,12 @@ export async function publishProduct(
   publish: boolean,
 ): Promise<IProductDocument | null> {
   let product = await ProductModel.findOne({ _id: productId, sellerId }).exec();
+  let actorRole = 'vendor';
   if (!product) {
     const { UserModel } = await import('@/backend/models');
     const actor = await UserModel.findById(sellerId).select('role').lean().exec() as any;
     const role = String(actor?.role || '').toLowerCase();
+    actorRole = role || actorRole;
     if (role === 'admin' || role === 'super_admin') {
       product = await ProductModel.findById(productId).exec();
     }
@@ -526,7 +612,19 @@ export async function publishProduct(
     throw new Error('Product not found.');
   }
 
-  product.status = publish ? 'PUBLISHED' : 'DRAFT';
+  syncProductApprovalState(product as any);
+  if (publish) {
+    if ((product as any).approvalStatus !== 'Approved') {
+      throw new Error('Product must be approved before activation.');
+    }
+    (product as any).productStatus = 'Active';
+    (product as any).approvalHistory = [...((product as any).approvalHistory || []), buildApprovalHistoryEntry({ action: 'ACTIVATED', fromApprovalStatus: (product as any).approvalStatus, toApprovalStatus: (product as any).approvalStatus, fromProductStatus: 'Inactive', toProductStatus: 'Active', actorId: sellerId, actorRole })];
+  } else {
+    const from = (product as any).productStatus || 'Inactive';
+    (product as any).productStatus = 'Inactive';
+    (product as any).approvalHistory = [...((product as any).approvalHistory || []), buildApprovalHistoryEntry({ action: 'DEACTIVATED', fromApprovalStatus: (product as any).approvalStatus, toApprovalStatus: (product as any).approvalStatus, fromProductStatus: from, toProductStatus: 'Inactive', actorId: sellerId, actorRole })];
+  }
+  syncProductApprovalState(product as any);
   const updated = await product.save();
   return updated;
 }

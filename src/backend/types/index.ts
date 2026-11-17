@@ -245,6 +245,27 @@ export interface IBrandDocument {
 }
 
 /**
+ * Product approval workflow types
+ */
+export type ProductApprovalStatus = 'Draft' | 'Pending Approval' | 'Under Review' | 'Approved' | 'Rejected' | 'Changes Requested';
+export type ProductPublicationStatus = 'Active' | 'Inactive';
+
+export interface IProductApprovalHistoryEntry {
+  action: string;
+  fromApprovalStatus?: string;
+  toApprovalStatus?: string;
+  fromProductStatus?: string;
+  toProductStatus?: string;
+  reason?: string;
+  comment?: string;
+  actorId?: string;
+  actorRole?: string;
+  actorName?: string;
+  metadata?: Record<string, unknown>;
+  createdAt?: Date | string;
+}
+
+/**
  * Product Model Type
  */
 export interface IProductDocument {
@@ -270,7 +291,19 @@ export interface IProductDocument {
   taxPercentage: number;
   stock: number;
   lowStockThreshold: number;
-  status: ProductStatus;
+  status: ProductStatus; // legacy/compat
+  approvalStatus?: ProductApprovalStatus;
+  productStatus?: ProductPublicationStatus;
+  rejectionReason?: string;
+  adminComment?: string;
+  submittedAt?: Date | string;
+  reviewedAt?: Date | string;
+  reviewedBy?: string;
+  approvedAt?: Date | string;
+  approvedBy?: string;
+  changesRequestedAt?: Date | string;
+  rejectedAt?: Date | string;
+  approvalHistory?: IProductApprovalHistoryEntry[];
   images: IProductImage[];
   variants: IProductVariantDocument[];
   seoTitle?: string;

@@ -255,15 +255,20 @@ export const orderService = {
     return json.data;
   },
 
-  async getInvoice(orderId: string): Promise<any> {
+  async getInvoice(orderId: string): Promise<{ blob: Blob; filename: string }> {
     const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/orders/${encodeURIComponent(orderId)}/invoice`, {
       method: "GET",
     });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok || json?.success === false) {
+    if (!res.ok) {
+      const json = await res.json().catch(() => ({}));
       throw new Error(json?.message || json?.error?.message || "Failed to fetch invoice.");
     }
-    return json.data;
+    const blob = await res.blob();
+    const cd = res.headers.get("content-disposition") || "";
+    const match = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(cd);
+    let filename = match ? decodeURIComponent(match[1].replace(/"/g, "").trim()) : `INV-${orderId}.pdf`;
+    if (!filename.toLowerCase().endsWith(".pdf")) filename += ".pdf";
+    return { blob, filename };
   },
 
   async createReturn(payload: { orderId: string; productId: string; quantity?: number; reason: string; type?: 'RETURN' | 'REPLACEMENT'; notes?: string; subOrderId?: string }): Promise<any> {

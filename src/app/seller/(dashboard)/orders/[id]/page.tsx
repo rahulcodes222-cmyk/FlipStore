@@ -1,18 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  ArrowLeft,
-  Package,
-  User,
-  MapPin,
-  CreditCard,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  RefreshCcw,
-} from "lucide-react";
+import { useParams } from "next/navigation";
+import { ArrowLeft, User, MapPin, RefreshCcw } from "lucide-react";
 import { useHydration } from "@/hooks/useHydration";
 import { useSellerStore } from "@/store/useSellerStore";
 import { sellerOrderService } from "@/services";
@@ -21,21 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import type { SellerOrderDetail, SellerOrderStatus } from "@/types";
-
-const STATUS_CONFIG: Record<SellerOrderStatus, { bg: string; text: string; border: string; label: string }> = {
-  PENDING: { bg: "bg-[#FFF8E1]", text: "text-[#B26A00]", border: "border-[#FFE082]", label: "Pending" },
-  PLACED: { bg: "bg-[#FFF8E1]", text: "text-[#B26A00]", border: "border-[#FFE082]", label: "Placed" },
-  CONFIRMED: { bg: "bg-[#E3F2FD]", text: "text-[#1565C0]", border: "border-[#BBDEFB]", label: "Confirmed" },
-  PROCESSING: { bg: "bg-[#FFF3E0]", text: "text-[#E65100]", border: "border-[#FFE0B2]", label: "Processing" },
-  PACKED: { bg: "bg-[#EDE7F6]", text: "text-[#5E35B1]", border: "border-[#D1C4E9]", label: "Packed" },
-  SHIPPED: { bg: "bg-[#E8F5E9]", text: "text-[#2E7D32]", border: "border-[#C8E6C9]", label: "Shipped" },
-  OUT_FOR_DELIVERY: { bg: "bg-[#E3F2FD]", text: "text-[#1565C0]", border: "border-[#BBDEFB]", label: "Out for Delivery" },
-  DELIVERED: { bg: "bg-[#E8F5E9]", text: "text-[#2E7D32]", border: "border-[#C8E6C9]", label: "Delivered" },
-  CANCELLED: { bg: "bg-[#FFEBEE]", text: "text-[#C62828]", border: "border-[#FFCDD2]", label: "Cancelled" },
-  RETURN_REQUESTED: { bg: "bg-[#FFF3E0]", text: "text-[#E65100]", border: "border-[#FFE0B2]", label: "Return Requested" },
-  RETURNED: { bg: "bg-[#F5F5F5]", text: "text-[#616161]", border: "border-[#E0E0E0]", label: "Returned" },
-  REFUNDED: { bg: "bg-[#F5F5F5]", text: "text-[#616161]", border: "border-[#E0E0E0]", label: "Refunded" },
-};
 
 const NEXT_ACTIONS: Record<SellerOrderStatus, SellerOrderStatus[]> = {
   PENDING: ["CONFIRMED", "CANCELLED"],
@@ -52,182 +28,145 @@ const NEXT_ACTIONS: Record<SellerOrderStatus, SellerOrderStatus[]> = {
   REFUNDED: [],
 };
 
-export default function SellerOrderDetailPage({
-  params,
-}: {
-  params: { id: string };
-}) {
+function formatMoney(n: number) {
+  return `₹${Number(n || 0).toLocaleString("en-IN")}`;
+}
+
+function labelStatus(s: string) {
+  return String(s || "").charAt(0) + String(s || "").slice(1).toLowerCase().replace(/_/g, " ");
+}
+
+export default function SellerOrderDetailPage() {
+  const params = useParams<{ id: string }>();
   const isHydrated = useHydration();
   const { seller } = useSellerStore();
-  const { toast, success, error } = useToast();
+  const { success, error } = useToast();
   const currentSeller = isHydrated ? seller : null;
   const sellerId = currentSeller?.id || "slr-001";
-  const orderId = params.id;
+  const orderId = String(params?.id || "");
 
   const [order, setOrder] = useState<SellerOrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [updating, setUpdating] = useState<SellerOrderStatus | null>(null);
 
   useEffect(() => {
+    if (!isHydrated || !orderId) return;
     let mounted = true;
     const load = async () => {
       setLoading(true);
       try {
         const o = await sellerOrderService.getOrderDetail(orderId, sellerId);
         if (mounted) setOrder(o);
-      } catch {
-        error("Failed to load order");
+      } catch (e: any) {
+        if (mounted) error(e?.message || "Failed to load order");
       } finally {
         if (mounted) setLoading(false);
-    }
+      }
     };
     load();
-    return () => {
-      mounted = false;
-    };
-  }, [sellerId, orderId, toast]);
+    return () => { mounted = false; };
+  }, [sellerId, orderId, isHydrated, error]);
 
   const handleStatusChange = async (newStatus: SellerOrderStatus) => {
-    if (!order) return;
+    if (!order || !orderId) return;
+    setUpdating(newStatus);
     try {
       const updated = await sellerOrderService.updateOrderStatus(orderId, sellerId, newStatus);
       if (updated) {
         setOrder(updated);
-        success(`Order status updated to ${updated.orderStatus}`);
+        success(`Order status updated to ${labelStatus(String(updated.orderStatus))}`);
       }
-    } catch {
-      error("Failed to update order status");
+    } catch (e: any) {
+      error(e?.message || "Failed to update order status");
+    } finally {
+      setUpdating(null);
     }
   };
 
-  if (loading || !order) {
+  if (loading || !isHydrated) {
     return (
-      <div className="p-4 sm:p-6">
+      <div className="p-4 sm:p-6 space-y-4">
+        <Link href="/seller/orders" className="inline-flex items-center gap-2 text-sm text-[#2874F0] font-semibold hover:underline"><ArrowLeft size={16} /> Back to Orders</Link>
         <h1 className="text-lg font-bold text-[#212121]">Order Details</h1>
         <div className="h-64 rounded-sm bg-[#E8E8E8] animate-skeleton mt-4" />
       </div>
     );
   }
 
+  if (!order) {
+    return (
+      <div className="p-4 sm:p-6 space-y-4">
+        <Link href="/seller/orders" className="inline-flex items-center gap-2 text-sm text-[#2874F0] font-semibold hover:underline"><ArrowLeft size={16} /> Back to Orders</Link>
+        <h1 className="text-lg font-bold text-[#212121]">Order not found</h1>
+        <p className="text-sm text-[#878787]">This order could not be loaded. It may not belong to your seller account or may no longer exist.</p>
+      </div>
+    );
+  }
+
   const nextStatuses: SellerOrderStatus[] = NEXT_ACTIONS[order.orderStatus as keyof typeof NEXT_ACTIONS] || [];
+  const statusBadgeClass = order.orderStatus === "DELIVERED"
+    ? "bg-[#E8F5E9] text-[#2E7D32] border-[#C8E6C9]"
+    : order.orderStatus === "SHIPPED" || order.orderStatus === "OUT_FOR_DELIVERY"
+    ? "bg-[#E3F2FD] text-[#1565C0] border-[#BBDEFB]"
+    : order.orderStatus === "PROCESSING" || order.orderStatus === "CONFIRMED" || order.orderStatus === "PACKED"
+    ? "bg-[#FFF3E0] text-[#E65100] border-[#FFE0B2]"
+    : order.orderStatus === "CANCELLED" || order.orderStatus === "RETURNED" || order.orderStatus === "RETURN_REQUESTED" || order.orderStatus === "REFUNDED"
+    ? "bg-[#FFEBEE] text-[#C62828] border-[#FFCDD2]"
+    : "bg-[#F5F5F5] text-[#616161] border-[#E0E0E0]";
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <Link
-          href="/seller/orders"
-          className="inline-flex items-center gap-2 text-sm text-[#2874F0] font-semibold hover:underline"
-        >
-          <ArrowLeft size={16} /> Back to Orders
-        </Link>
-        <div>
-          <h1 className="text-lg font-bold text-[#212121]">Order {order.orderNumber}</h1>
-          <p className="text-xs text-[#878787]">Order ID: {order.id}</p>
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-1">
+          <Link href="/seller/orders" className="inline-flex items-center gap-2 text-sm text-[#2874F0] font-semibold hover:underline">
+            <ArrowLeft size={16} /> Back to Orders
+          </Link>
+          <h1 className="text-lg sm:text-xl font-bold text-[#212121] break-words">Order {order.orderNumber || "-"}</h1>
+          <p className="text-xs text-[#878787] break-all">Order ID: {order.id}</p>
         </div>
-        <span
-          className={cn(
-            "inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold border",
-            order.orderStatus === "DELIVERED"
-              ? "bg-[#E8F5E9] text-[#2E7D32] border-[#C8E6C9]"
-              : order.orderStatus === "SHIPPED" || order.orderStatus === "OUT_FOR_DELIVERY"
-              ? "bg-[#E3F2FD] text-[#1565C0] border-[#BBDEFB]"
-              : order.orderStatus === "PROCESSING" || order.orderStatus === "CONFIRMED"
-              ? "bg-[#FFF3E0] text-[#E65100] border-[#FFE0B2]"
-              : order.orderStatus === "CANCELLED" || order.orderStatus === "RETURNED" || order.orderStatus === "RETURN_REQUESTED"
-              ? "bg-[#FFEBEE] text-[#C62828] border-[#FFCDD2]"
-              : "bg-[#F5F5F5] text-[#616161] border-[#E0E0E0]"
-          )}
-        >
-          {order.orderStatus.charAt(0) + order.orderStatus.slice(1).toLowerCase().replace(/_/g, " ")}
+        <span className={cn("inline-flex items-center self-start rounded-full px-2.5 py-1 text-[10px] sm:text-xs font-semibold border whitespace-nowrap", statusBadgeClass)}>
+          {labelStatus(order.orderStatus)}
         </span>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Order Summary */}
-        <div className="lg:col-span-1 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Order Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6">
+        <div className="xl:col-span-1 space-y-4 sm:space-y-6">
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-sm sm:text-base">Order Summary</CardTitle></CardHeader>
+            <CardContent className="space-y-4 text-sm">
               <div className="space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-[#878787]">Order Date</span>
-                  <span className="text-[#212121] font-medium">
-                    {new Date(order.placedAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
-                  </span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-[#878787]">Estimated Delivery</span>
-                  <span className="text-[#212121] font-medium">
-                    {new Date(order.estimatedDelivery).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
-                  </span>
-                </div>
+                <div className="flex items-start justify-between gap-3"><span className="text-[#878787] shrink-0">Order Date</span><span className="text-[#212121] font-medium text-right">{new Date(order.placedAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</span></div>
+                <div className="flex items-start justify-between gap-3"><span className="text-[#878787] shrink-0">Estimated Delivery</span><span className="text-[#212121] font-medium text-right">{new Date(order.estimatedDelivery).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</span></div>
                 {order.deliveredAt && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-[#878787]">Delivered At</span>
-                    <span className="text-[#212121] font-medium">
-                      {new Date(order.deliveredAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
-                    </span>
-                  </div>
+                  <div className="flex items-start justify-between gap-3"><span className="text-[#878787] shrink-0">Delivered At</span><span className="text-[#212121] font-medium text-right">{new Date(order.deliveredAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}</span></div>
                 )}
               </div>
               <div className="border-t border-[#F0F0F0] pt-4 space-y-3">
-                <div className="flex justify-between text-sm">
-                  <span className="text-[#878787]">Payment Method</span>
-                  <span className="text-[#212121] font-medium">{order.paymentMethod}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-[#878787]">Payment Status</span>
-                  <span className={cn("font-medium", order.paymentStatus === "PAID" ? "text-[#2E7D32]" : "text-[#E53935]")}>
-                    {order.paymentStatus}
-                  </span>
-                </div>
+                <div className="flex items-start justify-between gap-3"><span className="text-[#878787] shrink-0">Payment Method</span><span className="text-[#212121] font-medium text-right break-words">{String(order.paymentMethod || "-")}</span></div>
+                <div className="flex items-start justify-between gap-3"><span className="text-[#878787] shrink-0">Payment Status</span><span className={cn("font-medium text-right", order.paymentStatus === "PAID" ? "text-[#2E7D32]" : "text-[#E53935]")}>{String(order.paymentStatus || "-")}</span></div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Order Total</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="flex justify-between text-sm">
-                <span className="text-[#878787]">Subtotal</span>
-                <span className="text-[#212121]">₹{order.pricing.totalMrp.toLocaleString("en-IN")}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-[#878787]">Discount</span>
-                <span className="text-[#2E7D32]">-₹{order.pricing.discount.toLocaleString("en-IN")}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-[#878787]">Delivery Charges</span>
-                <span className="text-[#212121]">₹{order.pricing.deliveryCharges.toLocaleString("en-IN")}</span>
-              </div>
-              <div className="border-t border-[#F0F0F0] pt-2">
-                <div className="flex justify-between text-base font-bold">
-                  <span className="text-[#212121]">Total Amount</span>
-                  <span className="text-[#212121]">₹{order.pricing.totalAmount.toLocaleString("en-IN")}</span>
-                </div>
-              </div>
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-sm sm:text-base">Order Total</CardTitle></CardHeader>
+            <CardContent className="space-y-3 text-sm">
+              <div className="flex justify-between gap-3"><span className="text-[#878787]">Subtotal</span><span className="text-[#212121] font-medium">{formatMoney(order.pricing.totalMrp)}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-[#878787]">Discount</span><span className="text-[#2E7D32] font-medium">-{formatMoney(order.pricing.discount)}</span></div>
+              <div className="flex justify-between gap-3"><span className="text-[#878787]">Delivery Charges</span><span className="text-[#212121] font-medium">{formatMoney(order.pricing.deliveryCharges)}</span></div>
+              <div className="border-t border-[#F0F0F0] pt-3 flex justify-between gap-3 text-base font-bold"><span className="text-[#212121]">Total Amount</span><span className="text-[#212121]">{formatMoney(order.pricing.totalAmount)}</span></div>
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Actions</CardTitle>
-            </CardHeader>
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-sm sm:text-base">Actions</CardTitle></CardHeader>
             <CardContent className="space-y-2">
               {nextStatuses.length > 0 ? (
                 <div className="space-y-2">
                   {nextStatuses.map((status) => (
-                    <Button
-                      key={status}
-                      variant="outline"
-                      onClick={() => handleStatusChange(status)}
-                      className="w-full text-left justify-between"
-                    >
-                      <span>Mark as {status.charAt(0) + status.slice(1).toLowerCase().replace(/_/g, " ")}</span>
-                      <RefreshCcw size={14} />
+                    <Button key={status} variant="outline" onClick={() => handleStatusChange(status)} disabled={!!updating} className="w-full h-auto min-h-10 py-2 px-3 text-left justify-between gap-3 whitespace-normal">
+                      <span className="text-sm">{updating === status ? "Updating..." : `Mark as ${labelStatus(status)}`}</span>
+                      <RefreshCcw size={14} className={cn("shrink-0", updating === status ? "animate-spin" : "")} />
                     </Button>
                   ))}
                 </div>
@@ -236,101 +175,87 @@ export default function SellerOrderDetailPage({
               )}
             </CardContent>
           </Card>
-        </div>
 
-        {/* Order Items & Timeline */}
-        <div className="lg:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Order Items ({order.items.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="border-b border-[#F0F0F0] pb-3">
-                <div className="grid grid-cols-12 text-[10px] font-bold text-[#878787] uppercase mb-2">
-                  <div className="col-span-4">Product</div>
-                  <div className="col-span-2 text-right">Price</div>
-                  <div className="col-span-2 text-right">Qty</div>
-                  <div className="col-span-2 text-right">Total</div>
-                </div>
-              </div>
-              <div className="divide-y divide-[#F0F0F0]">
-                {order.items.map((item: any, i: number) => (
-                  <div key={i} className="grid grid-cols-12 items-center py-3">
-                    <div className="col-span-4 flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-sm overflow-hidden border border-[#E0E0E0] flex-shrink-0">
-                        <img src={item.thumbnail || "/placeholder-product.svg"} alt="" className="w-full h-full object-cover" />
-                      </div>
-                      <div className="text-sm font-medium text-[#212121]">{item.title}</div>
-                    </div>
-                    <div className="col-span-2 text-right text-sm font-medium text-[#212121]">
-                      ₹{item.price.toLocaleString("en-IN")}
-                    </div>
-                    <div className="col-span-2 text-right text-sm text-[#212121]">{item.quantity}</div>
-                    <div className="col-span-2 text-right text-sm font-bold text-[#212121]">
-                      ₹{(item.price * item.quantity).toLocaleString("en-IN")}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Order Timeline</CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="relative">
-                <div className="absolute left-3 top-0 bottom-0 w-px bg-[#E0E0E0]" />
-                {order.timeline.map((entry: any, i: number) => (
-                  <div key={entry.id} className="relative pl-10 py-3">
-                    <div className={cn(
-                      "absolute -left-[8px] top-2 w-3 h-3 rounded-full border-2 border-[#2874F0]",
-                      entry.isCompleted ? "bg-[#2874F0]" : "bg-[#F1F3F6]"
-                    )} />
-                    <div className="flex items-center gap-3">
-                      <div className="text-sm font-medium text-[#212121]">{entry.title}</div>
-                      <div className="ml-auto text-[10px] text-[#878787]">
-                        {new Date(entry.date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                      </div>
-                    </div>
-                    {!entry.isCompleted && (
-                      <div className="text-[10px] text-[#878787] mt-1">{entry.description}</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Customer Info */}
-        <div className="lg:col-span-1">
-          <Card>
-            <CardHeader>
-              <CardTitle>Customer Information</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-[#F1F3F6] flex items-center justify-center">
-                  <User size={20} className="text-[#878787]" />
-                </div>
-                <div>
-                  <div className="text-sm font-bold text-[#212121]">{order.customerName}</div>
-                  <div className="text-xs text-[#878787]">{order.customerEmail}</div>
-                  <div className="text-xs text-[#878787]">{order.customerPhone}</div>
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-sm sm:text-base">Customer Information</CardTitle></CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-full bg-[#F1F3F6] flex items-center justify-center shrink-0"><User size={20} className="text-[#878787]" /></div>
+                <div className="min-w-0 space-y-0.5">
+                  <div className="font-bold text-[#212121] break-words">{order.customerName || "Customer"}</div>
+                  {order.customerEmail ? <div className="text-xs text-[#878787] break-all">{order.customerEmail}</div> : null}
+                  {order.customerPhone ? <div className="text-xs text-[#878787] break-all">{order.customerPhone}</div> : null}
                 </div>
               </div>
               <div className="border-t border-[#F0F0F0] pt-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <MapPin size={16} className="text-[#2874F0]" />
-                  <span className="text-xs font-bold text-[#878787] uppercase">Shipping Address</span>
+                <div className="flex items-center gap-2 mb-2"><MapPin size={16} className="text-[#2874F0] shrink-0" /><span className="text-xs font-bold text-[#878787] uppercase">Shipping Address</span></div>
+                <div className="text-[#212121] break-words leading-relaxed">
+                  {order.customerAddress?.street || "-"}<br />
+                  {[order.customerAddress?.locality, order.customerAddress?.city].filter(Boolean).join(", ") || "-"}<br />
+                  {[order.customerAddress?.state, order.customerAddress?.pincode ? `- ${order.customerAddress.pincode}` : ""].filter(Boolean).join(" ") || "-"}
                 </div>
-                <div className="text-sm text-[#212121]">
-                  {order.customerAddress.street}<br />
-                  {order.customerAddress.locality}, {order.customerAddress.city}<br />
-                  {order.customerAddress.state} - {order.customerAddress.pincode}
-                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="xl:col-span-2 space-y-4 sm:space-y-6 min-w-0">
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-sm sm:text-base">Order Items ({order.items.length})</CardTitle></CardHeader>
+            <CardContent className="p-0 sm:p-6 sm:pt-0">
+              <div className="hidden sm:grid grid-cols-12 gap-3 text-[10px] font-bold text-[#878787] uppercase px-6 pb-3 border-b border-[#F0F0F0]">
+                <div className="col-span-6">Product</div>
+                <div className="col-span-2 text-right">Price</div>
+                <div className="col-span-2 text-right">Qty</div>
+                <div className="col-span-2 text-right">Total</div>
+              </div>
+              <div className="divide-y divide-[#F0F0F0]">
+                {order.items.map((item: any, i: number) => {
+                  const qty = Number(item.quantity || 0);
+                  const price = Number(item.price || 0);
+                  return (
+                    <div key={item.id || i} className="p-4 sm:px-6 sm:py-4">
+                      <div className="flex gap-3 sm:grid sm:grid-cols-12 sm:gap-3 sm:items-center">
+                        <div className="sm:col-span-6 flex items-start gap-3 min-w-0 flex-1">
+                          <div className="w-14 h-14 sm:w-12 sm:h-12 rounded-sm overflow-hidden border border-[#E0E0E0] flex-shrink-0 bg-white">
+                            <img src={item.thumbnail || "/placeholder-product.svg"} alt="" className="w-full h-full object-cover" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm font-medium text-[#212121] break-words">{item.title || "Product"}</div>
+                            <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:hidden">
+                              <div><span className="text-[#878787]">Price: </span><span className="font-medium text-[#212121]">{formatMoney(price)}</span></div>
+                              <div className="text-right"><span className="text-[#878787]">Qty: </span><span className="font-medium text-[#212121]">{qty}</span></div>
+                              <div className="col-span-2"><span className="text-[#878787]">Total: </span><span className="font-bold text-[#212121]">{formatMoney(price * qty)}</span></div>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="hidden sm:block sm:col-span-2 text-right text-sm font-medium text-[#212121]">{formatMoney(price)}</div>
+                        <div className="hidden sm:block sm:col-span-2 text-right text-sm text-[#212121]">{qty}</div>
+                        <div className="hidden sm:block sm:col-span-2 text-right text-sm font-bold text-[#212121]">{formatMoney(price * qty)}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-sm sm:text-base">Order Timeline</CardTitle></CardHeader>
+            <CardContent className="pt-0">
+              <div className="relative pl-2 sm:pl-0">
+                <div className="absolute left-3 top-1 bottom-1 w-px bg-[#E0E0E0]" />
+                {(order.timeline || []).map((entry: any) => (
+                  <div key={entry.id} className="relative pl-9 sm:pl-10 py-3">
+                    <div className={cn("absolute left-[7px] top-4 w-3 h-3 rounded-full border-2 border-[#2874F0]", entry.isCompleted ? "bg-[#2874F0]" : "bg-[#F1F3F6]")} />
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-3 min-w-0">
+                      <div className="text-sm font-medium text-[#212121] break-words">{entry.title || labelStatus(entry.status || "")}</div>
+                      <div className="text-[10px] sm:text-xs text-[#878787] shrink-0">{entry.date ? new Date(entry.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : ""}</div>
+                    </div>
+                    {entry.description ? <div className="text-xs text-[#878787] mt-1 break-words">{entry.description}</div> : null}
+                  </div>
+                ))}
+                {(!order.timeline || order.timeline.length === 0) && <p className="text-xs text-[#878787] py-2">No timeline updates available.</p>}
               </div>
             </CardContent>
           </Card>

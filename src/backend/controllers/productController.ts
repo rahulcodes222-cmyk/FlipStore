@@ -214,7 +214,7 @@ export const GET = withDatabase(
       // If slug is provided, return single product
       if (slug) {
         try {
-          const product = await getProductBySlug(slug);
+          const product = await getProductBySlug(slug, { publicOnly: true });
           if (!product) {
             return NextResponse.json(
               createErrorResponse('Product not found.', {
@@ -251,6 +251,13 @@ export const GET = withDatabase(
                 stock: product.stock,
                 lowStockThreshold: product.lowStockThreshold,
                 status: product.status,
+                approvalStatus: (product as any).approvalStatus,
+                productStatus: (product as any).productStatus,
+                rejectionReason: (product as any).rejectionReason || '',
+                adminComment: (product as any).adminComment || '',
+                submittedAt: (product as any).submittedAt || null,
+                reviewedAt: (product as any).reviewedAt || null,
+                approvedAt: (product as any).approvedAt || null,
                 images: product.images.map((img) => ({
                   id: img.id,
                   url: img.url,
@@ -301,6 +308,11 @@ export const GET = withDatabase(
       }
 
       try {
+        const role = String(authReq.user?.role || '').toLowerCase();
+        const isAdmin = role === 'admin' || role === 'super_admin';
+        const adminView = isAdmin && (url.searchParams.get('scope') === 'all' || url.searchParams.get('adminView') === 'true' || !!status || !!url.searchParams.get('approvalStatus') || !!url.searchParams.get('productStatus') || !!sellerId);
+        const approvalStatus = url.searchParams.get('approvalStatus') || undefined;
+        const productStatus = url.searchParams.get('productStatus') || undefined;
         const result = await getProducts(
           {
             search,
@@ -309,6 +321,8 @@ export const GET = withDatabase(
             brand,
             brandId,
             status: status as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+            approvalStatus,
+            productStatus,
             stock: stock as any, // eslint-disable-line @typescript-eslint/no-explicit-any
             sellerId,
             sortBy: sortBy as any, // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -322,6 +336,7 @@ export const GET = withDatabase(
             inStock,
           } as any,
           undefined,
+          { adminView, publicOnly: !adminView },
         );
 
         return NextResponse.json(
@@ -351,6 +366,13 @@ export const GET = withDatabase(
               stock: p.stock,
               lowStockThreshold: p.lowStockThreshold,
               status: p.status,
+              approvalStatus: (p as any).approvalStatus,
+              productStatus: (p as any).productStatus,
+              rejectionReason: (p as any).rejectionReason || '',
+              adminComment: (p as any).adminComment || '',
+              submittedAt: (p as any).submittedAt || null,
+              reviewedAt: (p as any).reviewedAt || null,
+              approvedAt: (p as any).approvedAt || null,
               images: p.images.map((img) => ({
                 id: img.id,
                 url: img.url,
@@ -439,7 +461,7 @@ export const productIdGET = withDatabase(
       }
 
       try {
-        const product = await getProductById(productId);
+        const product = await getProductById(productId, undefined, { publicOnly: true });
         if (!product) {
           return NextResponse.json(
             createErrorResponse('Product not found.', {

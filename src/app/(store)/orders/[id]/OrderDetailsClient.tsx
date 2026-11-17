@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { orderService } from "@/services/orderService";
-import { Order, OrderStatus } from "@/types";
+import { productService } from "@/services/productService";
+import { Order, OrderStatus, Review } from "@/types";
 import { useHydration } from "@/hooks/useHydration";
+import { useAuthStore } from "@/store/useAuthStore";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Button } from "@/components/ui/button";
 import { formatPrice, formatDate } from "@/utils/formatters";
@@ -20,6 +22,7 @@ import {
   AlertTriangle,
   Play,
   HelpCircle,
+  Star,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -79,6 +82,7 @@ const STAGE_ORDER: Record<string, number> = {
 export function OrderDetailsClient({ orderId }: { orderId: string }) {
   const { toast } = useToast();
   const isHydrated = useHydration();
+  const user = useAuthStore((s) => s.user);
 
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -87,6 +91,18 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("Found a better price elsewhere");
   const [isCancelling, setIsCancelling] = useState(false);
+
+  // Review state (only for purchased order items)
+  const [reviewOpenFor, setReviewOpenFor] = useState<string | null>(null);
+  const [reviewForm, setReviewForm] = useState<Record<string, { rating: number; title: string; comment: string }>>({});
+  const [reviewSubmitting, setReviewSubmitting] = useState<string | null>(null);
+  const [reviewedProducts, setReviewedProducts] = useState<Record<string, boolean>>({});
+  const [myReviews, setMyReviews] = useState<Record<string, Review | null>>({});
+
+  const isReviewEligibleOrder = useMemo(() => {
+    const st = String(order?.orderStatus || "").toUpperCase();
+    return !!order && !["CANCELLED", "RETURNED", "REFUNDED"].includes(st);
+  }, [order]);
 
   // Load Order
   useEffect(() => {
@@ -108,6 +124,43 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
       isCancelled = true;
     };
   }, [orderId]);
+
+  // Load current user's existing reviews for items in this purchased order (prevent duplicate review + show rating)
+  useEffect(() => {
+    if (!order || !isReviewEligibleOrder) return;
+    const uid = String((user as any)?.id || (user as any)?._id || "").trim();
+    if (!uid) return;
+    const productIds = Array.from(new Set((order.items || []).map((it: any) => String(it?.productId || "").trim()).filter(Boolean)));
+    if (productIds.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const entries = await Promise.all(productIds.map(async (pid) => {
+          try {
+            const reviews = await productService.getProductReviews(pid);
+            const mine = (reviews || []).find((r: any) => String(r?.userId || "") === uid) || null;
+            return [pid, mine] as const;
+          } catch {
+            return [pid, null] as const;
+          }
+        }));
+        if (cancelled) return;
+        setMyReviews((prev) => {
+          const next = { ...prev };
+          for (const [pid, mine] of entries) next[pid] = mine as any;
+          return next;
+        });
+        setReviewedProducts((prev) => {
+          const next = { ...prev };
+          for (const [pid, mine] of entries) if (mine) next[pid] = true;
+          return next;
+        });
+      } catch {
+        // ignore; backend still prevents duplicate review on submit
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [order, isReviewEligibleOrder, user]);
 
   // ── Simulator: update status ────────────────────────────────────────────────
   const handleSimulateStatus = async (targetStatus: OrderStatus) => {
@@ -160,19 +213,79 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
   const handleDownloadInvoice = async () => {
     if (!order) return;
     try {
-      const inv = await orderService.getInvoice(order.orderNumber || order.id);
-      const blob = new Blob([JSON.stringify(inv, null, 2)], { type: "application/json" });
+      const { blob, filename } = await orderService.getInvoice(order.orderNumber || order.id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${inv?.invoiceNumber || `INV-${order.orderNumber}`}.json`;
+      a.download = filename || `INV-${order.orderNumber}.pdf`;
       document.body.appendChild(a);
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast({ type: "success", title: "Invoice Downloaded", message: `Invoice ${inv?.invoiceNumber || order.orderNumber} downloaded.` });
+      toast({ type: "success", title: "Invoice Downloaded", message: `${a.download || "Invoice"} downloaded.` });
     } catch {
       toast({ type: "error", message: "Failed to download invoice." });
+    }
+  };
+
+  const getReviewForm = (productId: string) => reviewForm[productId] || { rating: 5, title: "", comment: "" };
+  const setReviewField = (productId: string, patch: Partial<{ rating: number; title: string; comment: string }>) => {
+    setReviewForm((prev) => ({ ...prev, [productId]: { ...getReviewForm(productId), ...patch } }));
+  };
+
+  const handleSubmitReview = async (productId: string, productTitle: string) => {
+    if (!productId) return;
+    if (myReviews[productId]) {
+      toast({ type: "info", message: "You have already reviewed this product." });
+      return;
+    }
+    const f = getReviewForm(productId);
+    const title = f.title.trim();
+    const comment = f.comment.trim();
+    if (!Number.isFinite(f.rating) || f.rating < 1 || f.rating > 5) {
+      toast({ type: "error", message: "Please select a rating (1-5)." });
+      return;
+    }
+    if (title.length < 3 || comment.length < 10) {
+      toast({ type: "error", message: "Please add a short title and a detailed review comment." });
+      return;
+    }
+    setReviewSubmitting(productId);
+    try {
+      const res = await productService.createProductReview(productId, { rating: f.rating, title, comment });
+      if (!res?.success) {
+        const msg = String(res?.message || "Failed to submit review.");
+        if (msg.toLowerCase().includes("already reviewed")) {
+          setReviewedProducts((prev) => ({ ...prev, [productId]: true }));
+          // fetch existing review to display rating/content
+          try {
+            const uid = String((user as any)?.id || (user as any)?._id || "").trim();
+            const reviews = await productService.getProductReviews(productId);
+            const mine = uid ? (reviews || []).find((r: any) => String(r?.userId || "") === uid) || null : null;
+            if (mine) setMyReviews((prev) => ({ ...prev, [productId]: mine as any }));
+          } catch {}
+        }
+        toast({ type: "error", title: "Review not submitted", message: msg });
+        return;
+      }
+      const submittedReview = (res as any)?.review as Review | undefined;
+      if (submittedReview) {
+        setMyReviews((prev) => ({ ...prev, [productId]: submittedReview }));
+      } else {
+        try {
+          const uid = String((user as any)?.id || (user as any)?._id || "").trim();
+          const reviews = await productService.getProductReviews(productId);
+          const mine = uid ? (reviews || []).find((r: any) => String(r?.userId || "") === uid) || null : null;
+          if (mine) setMyReviews((prev) => ({ ...prev, [productId]: mine as any }));
+        } catch {}
+      }
+      setReviewedProducts((prev) => ({ ...prev, [productId]: true }));
+      setReviewOpenFor(null);
+      toast({ type: "success", title: "Review submitted", message: `Thanks for reviewing ${productTitle}.` });
+    } catch (e: any) {
+      toast({ type: "error", title: "Review failed", message: e?.message || "Failed to submit review." });
+    } finally {
+      setReviewSubmitting(null);
     }
   };
 
@@ -513,6 +626,97 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
                       <p className="text-xs text-[#2874F0] font-semibold mt-2">
                         Total: {formatPrice(item.price * item.quantity)}
                       </p>
+
+                      {isReviewEligibleOrder && (
+                        <div className="mt-3 pt-3 border-t border-[#F0F0F0]">
+                          {myReviews[item.productId] || reviewedProducts[item.productId] ? (
+                            <div className="rounded-sm border border-green-200 bg-green-50 p-3 space-y-1.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#388E3C]">
+                                  <CheckCircle2 size={13} /> Your review submitted
+                                </span>
+                                {myReviews[item.productId]?.rating != null && (
+                                  <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#212121]">
+                                    <Star size={13} className="fill-[#FF9F00] text-[#FF9F00]" />
+                                    {Number(myReviews[item.productId]?.rating || 0).toFixed(1)}/5
+                                  </span>
+                                )}
+                              </div>
+                              {myReviews[item.productId]?.title ? (
+                                <p className="text-xs font-semibold text-[#212121]">{String(myReviews[item.productId]?.title)}</p>
+                              ) : null}
+                              {myReviews[item.productId]?.comment ? (
+                                <p className="text-xs text-[#555] whitespace-pre-wrap">{String(myReviews[item.productId]?.comment)}</p>
+                              ) : !myReviews[item.productId] ? (
+                                <p className="text-xs text-[#555]">You have already reviewed this product.</p>
+                              ) : null}
+                            </div>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => setReviewOpenFor((cur) => cur === item.productId ? null : item.productId)}
+                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2874F0] hover:underline"
+                              >
+                                <Star size={13} className="text-[#FF9F00]" />
+                                {reviewOpenFor === item.productId ? "Hide Review Form" : "Rate & Review Product"}
+                              </button>
+
+                              {reviewOpenFor === item.productId && (
+                                <div className="mt-2 rounded-sm border border-[#E0E0E0] bg-[#FAFAFA] p-3 space-y-2">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[11px] font-semibold text-[#555] mr-1">Rating:</span>
+                                    {[1, 2, 3, 4, 5].map((n) => (
+                                      <button
+                                        key={n}
+                                        type="button"
+                                        onClick={() => setReviewField(item.productId, { rating: n })}
+                                        className="p-0.5"
+                                        aria-label={`Rate ${n}`}
+                                      >
+                                        <Star size={16} className={n <= getReviewForm(item.productId).rating ? "fill-[#FF9F00] text-[#FF9F00]" : "text-gray-300"} />
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <input
+                                    type="text"
+                                    value={getReviewForm(item.productId).title}
+                                    onChange={(e) => setReviewField(item.productId, { title: e.target.value })}
+                                    placeholder="Review title"
+                                    className="w-full h-9 px-3 text-xs bg-white border border-[#E0E0E0] rounded-xs focus:outline-none focus:border-[#2874F0]"
+                                  />
+                                  <textarea
+                                    value={getReviewForm(item.productId).comment}
+                                    onChange={(e) => setReviewField(item.productId, { comment: e.target.value })}
+                                    placeholder="Share your experience with this product..."
+                                    rows={3}
+                                    className="w-full px-3 py-2 text-xs bg-white border border-[#E0E0E0] rounded-xs focus:outline-none focus:border-[#2874F0] resize-y"
+                                  />
+                                  <div className="flex items-center gap-2">
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      onClick={() => handleSubmitReview(item.productId, item.title)}
+                                      isLoading={reviewSubmitting === item.productId}
+                                      className="text-xs"
+                                    >
+                                      Submit Review
+                                    </Button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setReviewOpenFor(null)}
+                                      className="text-xs text-[#878787] hover:text-[#212121]"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                  <p className="text-[10px] text-[#878787]">Only customers who purchased this product can submit a review. One review per product.</p>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}

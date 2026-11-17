@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
@@ -34,7 +34,7 @@ const productSchema = z.object({
   taxPercentage: z.coerce.number().min(0).max(100).optional(),
   stock: z.coerce.number().int().min(0, "Stock must be 0 or more"),
   lowStockThreshold: z.coerce.number().int().min(0).optional(),
-  status: z.enum(["DRAFT", "PUBLISHED", "OUT_OF_STOCK"]),
+  status: z.enum(["DRAFT", "PENDING_APPROVAL", "OUT_OF_STOCK"]),
   seoTitle: z.string().optional(),
   seoDescription: z.string().optional(),
   estimatedDeliveryDays: z.coerce.number().int().min(0).max(30).optional(),
@@ -164,7 +164,7 @@ export default function SellerAddProductPage() {
     setIsSaving(true);
     try {
       await sellerProductService.createProduct(sellerId, payload);
-      success("Product created successfully. It will be submitted for review as applicable.");
+      success(values.status === "PENDING_APPROVAL" ? "Product submitted for approval." : "Product saved as draft.");
       router.push("/seller/products");
     } catch (err: any) {
       const msg = err?.message || "Failed to create product";
@@ -262,7 +262,7 @@ export default function SellerAddProductPage() {
                 <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Tax %</label><Input {...form.register("taxPercentage")} type="number" min={0} max={100} /></div>
                 <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Stock Quantity</label><Input {...form.register("stock")} type="number" min={0} />{form.formState.errors.stock && <p className="text-[10px] text-[#E53935]">{form.formState.errors.stock.message}</p>}</div>
                 <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Low Stock Threshold</label><Input {...form.register("lowStockThreshold")} type="number" min={0} /></div>
-                <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Status</label><select {...form.register("status")} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]"><option value="DRAFT">Draft</option><option value="PUBLISHED">Submit for Publishing</option><option value="OUT_OF_STOCK">Out of Stock</option></select></div>
+                <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Submission Status</label><select {...form.register("status")} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]"><option value="DRAFT">Save as Draft</option><option value="PENDING_APPROVAL">Submit for Approval</option></select><p className="text-[10px] text-[#878787]">Submitted products require admin approval before becoming visible to customers.</p></div>
                 <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Estimated Delivery (days)</label><Input {...form.register("estimatedDeliveryDays")} type="number" min={0} max={30} /></div>
                 <div className="space-y-1.5 flex items-end pb-2"><label className="inline-flex items-center gap-2 text-sm text-[#212121]"><input type="checkbox" {...form.register("isFreeDelivery")} className="rounded-sm" /> Free delivery</label></div>
               </div>

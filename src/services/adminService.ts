@@ -116,16 +116,16 @@ export const adminService = {
     query?: string;
     category?: string;
     inStockOnly?: boolean;
+    adminView?: boolean;
   }): Promise<Product[]> {
     const sp = new URLSearchParams();
     sp.set("limit", "100");
+    if (params?.adminView !== false) sp.set("scope", "all");
     if (params?.query?.trim()) sp.set("search", params.query.trim());
     if (params?.category && params.category !== "ALL") sp.set("category", params.category);
     if (params?.inStockOnly) sp.set("stock", "IN_STOCK");
-    const res = await fetch(`${API_BASE}/api/v1/products?${sp.toString()}`, {
+    const res = await adminFetch(`${API_BASE}/api/v1/products?${sp.toString()}`, {
       method: "GET",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
     });
     const body = await res.json().catch(() => ({} as any));
     if (!res.ok || body?.success === false) {
@@ -408,6 +408,52 @@ export const adminService = {
     return body?.data;
   },
 
+  // ── Product Approvals (DB-backed) ──────────────────────────────────────────
+  async getProductApprovals(params?: { tab?: string; search?: string; approvalStatus?: string; productStatus?: string; category?: string; sellerId?: string; page?: number; limit?: number; sortBy?: string }) {
+    const sp = new URLSearchParams();
+    if (params?.tab) sp.set("tab", params.tab);
+    if (params?.search?.trim()) sp.set("search", params.search.trim());
+    if (params?.approvalStatus) sp.set("approvalStatus", params.approvalStatus);
+    if (params?.productStatus) sp.set("productStatus", params.productStatus);
+    if (params?.category) sp.set("category", params.category);
+    if (params?.sellerId) sp.set("sellerId", params.sellerId);
+    if (params?.sortBy) sp.set("sortBy", params.sortBy);
+    sp.set("page", String(params?.page || 1));
+    sp.set("limit", String(params?.limit || 20));
+    const res = await adminFetch(`${API_BASE}/api/v1/admin/products/approvals?${sp.toString()}`, { method: "GET" });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) throw new Error(body?.message || body?.error?.message || "Failed to fetch product approvals.");
+    return body?.data || { data: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 1 }, counts: {} };
+  },
+
+  async getProductApprovalById(id: string) {
+    const res = await adminFetch(`${API_BASE}/api/v1/admin/products/approvals/${encodeURIComponent(id)}`, { method: "GET" });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) throw new Error(body?.message || body?.error?.message || "Failed to fetch product approval details.");
+    return body?.data;
+  },
+
+  async approveProductApproval(id: string, payload?: { adminComment?: string; activate?: boolean }) {
+    const res = await adminFetch(`${API_BASE}/api/v1/admin/products/approvals/${encodeURIComponent(id)}/approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload || {}) });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) throw new Error(body?.message || body?.error?.message || "Failed to approve product.");
+    return body?.data;
+  },
+
+  async rejectProductApproval(id: string, payload: { reason: string; adminComment?: string }) {
+    const res = await adminFetch(`${API_BASE}/api/v1/admin/products/approvals/${encodeURIComponent(id)}/reject`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) throw new Error(body?.message || body?.error?.message || "Failed to reject product.");
+    return body?.data;
+  },
+
+  async requestProductApprovalChanges(id: string, payload: { comment: string; adminComment?: string }) {
+    const res = await adminFetch(`${API_BASE}/api/v1/admin/products/approvals/${encodeURIComponent(id)}/request-changes`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) throw new Error(body?.message || body?.error?.message || "Failed to request changes.");
+    return body?.data;
+  },
+
   // ── Customers (DB-backed via admin API) ─────────────────────────────────────
   async getCustomers(query?: string): Promise<User[]> {
     const sp = new URLSearchParams();
@@ -492,19 +538,24 @@ export const adminService = {
     writeStorage(STORAGE_KEYS.COUPONS, updated);
   },
 
-  // ── Reviews ─────────────────────────────────────────────────────────────────
+  // ── Reviews (DB-backed via admin API) ──────────────────────────────────────
   async getReviews(ratingFilter?: number): Promise<Review[]> {
-    const reviews = readStorage<Review[]>(STORAGE_KEYS.REVIEWS, MOCK_REVIEWS);
-    if (ratingFilter && ratingFilter > 0) {
-      return reviews.filter((r) => r.rating === ratingFilter);
+    const sp = new URLSearchParams();
+    if (ratingFilter && ratingFilter > 0) sp.set("rating", String(ratingFilter));
+    const res = await adminFetch(`${API_BASE}/api/v1/admin/reviews${sp.toString() ? `?${sp.toString()}` : ""}`, { method: "GET" });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || body?.error?.message || "Failed to fetch reviews.");
     }
-    return reviews;
+    return Array.isArray(body?.data) ? (body.data as Review[]) : [];
   },
 
   async deleteReview(id: string): Promise<void> {
-    const reviews = await this.getReviews();
-    const updated = reviews.filter((r) => r.id !== id);
-    writeStorage(STORAGE_KEYS.REVIEWS, updated);
+    const res = await adminFetch(`${API_BASE}/api/v1/admin/reviews/${encodeURIComponent(id)}`, { method: "DELETE" });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || body?.error?.message || "Failed to delete review.");
+    }
   },
 
   // ── Settings ────────────────────────────────────────────────────────────────
