@@ -12,7 +12,7 @@ import {
   Users,
   CreditCard,
   BarChart3,
-  Tag,
+  // Tag,
   Star,
   RefreshCcw,
   Bell,
@@ -80,14 +80,14 @@ const NAV_GROUPS: GroupDef[] = [
       { key: "transactions", label: "Transactions", href: "/seller/transactions", icon: <BarChart3 size={18} /> },
     ],
   },
-  {
-    key: "growth",
-    label: "Growth",
-    items: [
-      { key: "analytics", label: "Analytics", href: "/seller/analytics", icon: <BarChart3 size={18} /> },
-      { key: "coupons", label: "Coupons", href: "/seller/coupons", icon: <Tag size={18} /> },
-    ],
-  },
+  // {
+  //   key: "growth",
+  //   label: "Growth",
+  //   items: [
+  //     { key: "analytics", label: "Analytics", href: "/seller/analytics", icon: <BarChart3 size={18} /> },
+  //     { key: "coupons", label: "Coupons", href: "/seller/coupons", icon: <Tag size={18} /> },
+  //   ],
+  // },
   {
     key: "reviews",
     label: "Reviews",

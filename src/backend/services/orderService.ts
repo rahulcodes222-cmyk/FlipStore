@@ -15,12 +15,15 @@ import {
   ReturnRequestModel,
   PaymentModel,
   CouponModel,
+  VendorModel,
 } from '@/backend/models';
 import type { CheckoutSummaryInput, CreateOrderInput } from '@/backend/validations/checkout.schema';
 import type { IProductDocument } from '@/backend/types';
 import { USER_ROLES } from '@/backend/constants/roles';
 import { refundOrderPayment } from '@/backend/services/paymentService';
 import { ensureSubOrderCommissionLedger, markSubOrderLedgerAvailable, applyRefundReversalForSubOrder } from '@/backend/services/vendorFinanceService';
+import { createShiprocketShipmentForSubOrder, isShiprocketConfigured } from '@/backend/services/shiprocketService';
+import { logger } from '@/backend/utils/logger';
 
 const SHIPPING_CHARGE = 40;
 const FREE_SHIPPING_THRESHOLD = 499;
@@ -799,6 +802,43 @@ export async function updateOrderStatus(requesterId: string, requesterRole: stri
     if (targetStatus === 'SHIPPED') shipmentUpdate.shippedAt = nowDate();
     if (targetStatus === 'OUT_FOR_DELIVERY') shipmentUpdate.outForDeliveryAt = nowDate();
     if (targetStatus === 'DELIVERED') shipmentUpdate.deliveredAt = nowDate();
+
+    // Shiprocket integration: auto-create shipment/AWB when marking as SHIPPED (best-effort)
+    if (targetStatus === 'SHIPPED' && isShiprocketConfigured()) {
+      try {
+        const existingShipment: any = await ShipmentModel.findOne({ subOrderId: String(sub._id) }).lean().exec();
+        const hasTracking = !!(existingShipment?.awbCode || existingShipment?.trackingNumber || shipmentUpdate.trackingNumber || shipmentUpdate.awbCode);
+        if (!hasTracking) {
+          const shipAddr = await AddressModel.findById((order as any).shippingAddress).lean().exec();
+          const sellerUser = await UserModel.findById(String(sub.sellerId)).lean().exec();
+          let vendorDoc: any = null;
+          try { vendorDoc = await VendorModel.findOne({ userId: String(sub.sellerId) }).lean().exec(); } catch {}
+          const sr = await createShiprocketShipmentForSubOrder({
+            order: (typeof order.toObject === 'function' ? order.toObject() : order),
+            subOrder: (typeof sub.toObject === 'function' ? sub.toObject() : sub),
+            shippingAddress: shipAddr,
+            seller: sellerUser,
+            vendor: vendorDoc,
+          });
+          if (sr) {
+            if (sr.awbCode) shipmentUpdate.awbCode = String(sr.awbCode);
+            if (sr.awbCode && !shipmentUpdate.trackingNumber) shipmentUpdate.trackingNumber = String(sr.awbCode);
+            if (sr.trackingUrl && !shipmentUpdate.trackingUrl) shipmentUpdate.trackingUrl = String(sr.trackingUrl);
+            if (sr.courierName && !shipmentUpdate.carrier) shipmentUpdate.carrier = String(sr.courierName);
+            if (sr.courierName) shipmentUpdate.courierName = String(sr.courierName);
+            if (sr.shiprocketOrderId) shipmentUpdate.shiprocketOrderId = String(sr.shiprocketOrderId);
+            if (sr.shiprocketShipmentId) shipmentUpdate.shiprocketShipmentId = String(sr.shiprocketShipmentId);
+            if (sr.labelUrl) shipmentUpdate.labelUrl = String(sr.labelUrl);
+            if (sr.manifestUrl) shipmentUpdate.manifestUrl = String(sr.manifestUrl);
+            if (sr.pickupScheduledAt) shipmentUpdate.pickupScheduledAt = new Date(sr.pickupScheduledAt);
+            shipmentUpdate.lastShiprocketSyncAt = nowDate();
+            shipmentUpdate.shiprocketMeta = { ...(existingShipment?.shiprocketMeta || {}), lastCreate: sr.raw || null };
+          }
+        }
+      } catch (srErr) {
+        logger.warn('Shiprocket integration skipped for suborder status update', { subOrderId: String(sub._id), orderId: String(order._id), error: (srErr as Error)?.message });
+      }
+    }
 
     await ShipmentModel.findOneAndUpdate(
       { subOrderId: String(sub._id) },

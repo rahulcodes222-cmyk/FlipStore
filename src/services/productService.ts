@@ -311,7 +311,7 @@ export const productService = {
    */
   async createProductReview(
     productId: string,
-    payload: { rating: number; title: string; comment: string; images?: string[] },
+    payload: { rating: number; title: string; comment: string; images?: string[]; orderId?: string },
   ): Promise<{ success: boolean; review?: Review; message?: string; details?: Record<string, string[]> }> {
     try {
       const res = await fetch(`${getApiBase()}/api/v1/products/${productId}/reviews`, {

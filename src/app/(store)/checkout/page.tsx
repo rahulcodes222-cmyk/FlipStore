@@ -11,9 +11,31 @@ import { orderService } from "@/services/orderService";
 import { authService } from "@/services/authService";
 import { createPaymentOrder, verifyPayment } from "@/services/paymentService";
 import { useToast } from "@/components/common/Toast";
+import { useDeliveryLocationStore } from "@/store/useDeliveryLocationStore";
 import { Button } from "@/components/ui/button";
 import { InputField } from "@/components/common/InputField";
 import { Address, Order, OrderItem, PaymentMethod, PaymentStatus } from "@/types";
+import {
+  Check,
+  ShieldCheck,
+  MapPin,
+  CreditCard,
+  ShoppingBag,
+  Plus,
+  CheckCircle2,
+  LogOut,
+  Edit2,
+  Trash2,
+  QrCode,
+  Smartphone,
+  Building2,
+  Banknote,
+  AlertTriangle,
+  ArrowRight,
+  Package,
+  Calendar,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
 
 declare global {
   interface Window {
@@ -39,27 +61,6 @@ function loadRazorpayScript(): Promise<boolean> {
     document.body.appendChild(script);
   });
 }
-import {
-  Check,
-  ShieldCheck,
-  MapPin,
-  CreditCard,
-  ShoppingBag,
-  Plus,
-  CheckCircle2,
-  LogOut,
-  Edit2,
-  Trash2,
-  QrCode,
-  Smartphone,
-  Building2,
-  Banknote,
-  AlertTriangle,
-  ArrowRight,
-  Package,
-  Calendar,
-} from "lucide-react";
-import { cn } from "@/lib/utils";
 
 const INDIAN_STATES = [
   "Andhra Pradesh", "Assam", "Bihar", "Delhi", "Gujarat", "Haryana", "Karnataka",
@@ -106,30 +107,6 @@ function isTempAddressId(id?: string) {
   return !/^[a-f\d]{24}$/i.test(String(id));
 }
 
-async function ensurePersistedAddress(addr: Address): Promise<Address> {
-  if (!isTempAddressId(addr.id)) return addr;
-  try {
-    const mod = await import('@/services/authService');
-    const created = await mod.authService.addAddress({
-      name: addr.name,
-      phone: addr.phone,
-      pincode: addr.pincode,
-      locality: addr.locality || '',
-      street: addr.street,
-      city: addr.city,
-      state: addr.state,
-      landmark: addr.landmark,
-      alternatePhone: (addr as any).alternatePhone,
-      type: (addr.type as any) || 'home',
-      isDefault: !!addr.isDefault,
-    } as any);
-    if (created?.id) return { ...addr, ...created, id: String((created as any).id || (created as any)._id) } as Address;
-  } catch {
-    // fallback: proceed with original temp/default address; backend can resolve/create it during checkout/order.
-  }
-  return addr;
-}
-
 const buildDefaultAddresses = (user?: { name?: string; phone?: string; addresses?: Address[] } | null): Address[] => {
   if (user?.addresses && user.addresses.length > 0) return user.addresses;
   return [
@@ -157,6 +134,8 @@ export default function CheckoutPage() {
   const items = useCartStore((state) => state.items);
   const clearCart = useCartStore((state) => state.clearCart);
   const { user, isAuthenticated, logout } = useAuthStore();
+
+  const { location: deliveryLocation } = useDeliveryLocationStore();
 
   const [currentStep, setCurrentStep] = useState<Step>(1);
   const [addresses, setAddresses] = useState<Address[]>(() => buildDefaultAddresses(user));
@@ -231,6 +210,43 @@ export default function CheckoutPage() {
   }, []);
 
   useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await authService.getAddresses();
+        if (cancelled || !Array.isArray(data)) return;
+        setAddresses((prev) => {
+          const fetched = data as Address[];
+          if (fetched.length > 0) {
+            const defIdx = fetched.findIndex((a) => a.isDefault);
+            if (defIdx >= 0) setSelectedAddressIndex(defIdx);
+            return fetched;
+          }
+          return prev.length ? prev : buildDefaultAddresses(user);
+        });
+      } catch {
+        // keep local fallback addresses
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isAuthenticated, user?.id]);
+
+  useEffect(() => {
+    if (!deliveryLocation?.pincode) return;
+    if (currentStep === 5) return;
+    const pin = String(deliveryLocation.pincode || "").trim();
+    const city = String(deliveryLocation.city || deliveryLocation.area || "").trim().toLowerCase();
+    setSelectedAddressIndex((prevIdx) => {
+      const idx = addresses.findIndex((a) =>
+        String(a.pincode || "").trim() === pin &&
+        (!city || String(a.city || "").trim().toLowerCase().includes(city) || String(a.locality || "").trim().toLowerCase().includes(city))
+      );
+      return idx >= 0 ? idx : prevIdx;
+    });
+  }, [deliveryLocation?.pincode, deliveryLocation?.city, deliveryLocation?.area, addresses, currentStep]);
+
+  useEffect(() => {
     if (user) {
       setAddresses((prev) => (prev.length ? prev : buildDefaultAddresses(user)));
     }
@@ -275,18 +291,8 @@ export default function CheckoutPage() {
       setSummaryLoading(true);
       setSummaryError(null);
       try {
-        let addr = selectedAddress;
-        if (isTempAddressId(addr.id)) {
-          const persisted = await ensurePersistedAddress(addr);
-          if (!cancelled && persisted.id !== addr.id) {
-            setAddresses((prev) => prev.map((a, i) => (i === selectedAddressIndex ? { ...a, ...persisted } : a)));
-            addr = persisted;
-          } else {
-            addr = persisted;
-          }
-        }
         const summaryData = await orderService.getCheckoutSummary({
-          shippingAddressId: addr.id,
+          shippingAddressId: selectedAddress.id,
           paymentMethod,
           couponCode: appliedCouponCode || undefined,
           items: items.map((i) => ({
@@ -319,13 +325,8 @@ export default function CheckoutPage() {
             setCouponError(msg);
             setCouponMessage(null);
             try {
-              let addr = selectedAddress;
-              if (isTempAddressId(addr.id)) {
-                const persisted = await ensurePersistedAddress(addr);
-                addr = persisted?.id ? persisted : addr;
-              }
               const plain = await orderService.getCheckoutSummary({
-                shippingAddressId: addr.id,
+                shippingAddressId: selectedAddress.id,
                 paymentMethod,
                 items: items.map((i) => ({ productId: i.product.id, variantId: i.selectedVariants?.variantId, quantity: i.quantity })),
               });
@@ -468,17 +469,9 @@ export default function CheckoutPage() {
     setCouponError(null);
     setCouponMessage(null);
     try {
-      let addr = selectedAddress;
-      if (isTempAddressId(addr.id)) {
-        const persisted = await ensurePersistedAddress(addr);
-        if (persisted.id !== addr.id) {
-          setAddresses((prev) => prev.map((a, i) => (i === selectedAddressIndex ? { ...a, ...persisted } : a)));
-        }
-        addr = persisted;
-      }
       const validated = await orderService.validateCoupon({
         couponCode: code,
-        shippingAddressId: addr.id,
+        shippingAddressId: selectedAddress.id,
         items: items.map((i) => ({ productId: i.product.id, variantId: i.selectedVariants?.variantId, quantity: i.quantity })),
       });
       const discount = Number((validated as any)?.summary?.couponDiscount || 0);
@@ -543,19 +536,9 @@ export default function CheckoutPage() {
     const idempotencyKey = `checkout:${user.id}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
 
     try {
-      // Ensure temp/default address is saved so backend can resolve a valid address record.
-      let checkoutAddress = selectedAddress;
-      if (isTempAddressId(checkoutAddress.id)) {
-        const persisted = await ensurePersistedAddress(checkoutAddress);
-        if (persisted.id !== checkoutAddress.id) {
-          setAddresses((prev) => prev.map((a, i) => (i === selectedAddressIndex ? { ...a, ...persisted } : a)));
-        }
-        checkoutAddress = persisted;
-      }
-
       // Server creates order with server-calculated pricing/status (online starts PENDING).
       const created = await orderService.createOrder({
-        shippingAddressId: checkoutAddress.id,
+        shippingAddressId: selectedAddress.id,
         paymentMethod,
         ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
         cartItems: items.map((i) => ({

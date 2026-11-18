@@ -1,13 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { useHydration } from "@/hooks/useHydration";
 import { useSellerStore } from "@/store/useSellerStore";
 import { sellerAnalyticsService } from "@/services";
 import { useToast } from "@/components/common/Toast";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { RevenueAnalytics } from "@/components/seller/RevenueAnalytics";
 import { SalesByCategoryChart } from "@/components/seller/SalesByCategoryChart";
 import { ProductPerformanceChart } from "@/components/seller/ProductPerformanceChart";
@@ -21,12 +18,32 @@ const DATE_FILTERS = [
   { label: "Last 30 Days", value: "30d" },
   { label: "Last 90 Days", value: "90d" },
   { label: "This Year", value: "ytd" },
-];
+] as const;
+
+function toIsoDate(d: Date) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  const y = x.getFullYear();
+  const m = String(x.getMonth() + 1).padStart(2, "0");
+  const day = String(x.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function getRange(filter: string): { from: string; to: string } {
+  const now = new Date();
+  const to = toIsoDate(now);
+  if (filter === "today") return { from: to, to };
+  if (filter === "ytd") return { from: `${now.getFullYear()}-01-01`, to };
+  const days = filter === "7d" ? 7 : filter === "90d" ? 90 : 30;
+  const fromDate = new Date(now);
+  fromDate.setDate(fromDate.getDate() - (days - 1));
+  return { from: toIsoDate(fromDate), to };
+}
 
 export default function SellerAnalyticsPage() {
   const isHydrated = useHydration();
   const { seller } = useSellerStore();
-  const { toast, success, error } = useToast();
+  const { success, error } = useToast();
   const currentSeller = isHydrated ? seller : null;
   const sellerId = currentSeller?.id || "slr-001";
 
@@ -35,7 +52,9 @@ export default function SellerAnalyticsPage() {
   const [productPerformance, setProductPerformance] = useState<ProductPerformanceData[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [dateFilter, setDateFilter] = useState("30d");
+  const [dateFilter, setDateFilter] = useState<(typeof DATE_FILTERS)[number]["value"]>("30d");
+
+  const range = useMemo(() => getRange(dateFilter), [dateFilter]);
 
   useEffect(() => {
     let mounted = true;
@@ -43,10 +62,10 @@ export default function SellerAnalyticsPage() {
       setLoading(true);
       try {
         const [data, categories, products, sum] = await Promise.all([
-          sellerAnalyticsService.getAnalyticsData(sellerId),
-          sellerAnalyticsService.getCategorySales(sellerId),
-          sellerAnalyticsService.getProductPerformance(sellerId),
-          sellerAnalyticsService.getAnalyticsSummary(sellerId),
+          sellerAnalyticsService.getAnalyticsData(sellerId, range),
+          sellerAnalyticsService.getCategorySales(sellerId, range),
+          sellerAnalyticsService.getProductPerformance(sellerId, range),
+          sellerAnalyticsService.getAnalyticsSummary(sellerId, range),
         ]);
         if (mounted) {
           setAnalyticsData(data);
@@ -55,20 +74,24 @@ export default function SellerAnalyticsPage() {
           setSummary(sum);
         }
       } catch {
-        error("Failed to load analytics");
+        if (mounted) error("Failed to load analytics");
       } finally {
         if (mounted) setLoading(false);
-    }
+      }
     };
     load();
     return () => {
       mounted = false;
     };
-  }, [sellerId, error]);
+  }, [sellerId, range.from, range.to, error]);
 
   const handleDownload = (type: string) => {
     success(`${type} report downloaded`);
   };
+
+  const hasTrend = analyticsData.length > 0;
+  const hasCategories = categorySales.length > 0;
+  const hasProducts = productPerformance.length > 0;
 
   if (loading) {
     return (
@@ -88,7 +111,7 @@ export default function SellerAnalyticsPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-lg font-bold text-[#212121]">Analytics</h1>
-          <p className="text-xs text-[#878787]">Track your store performance and growth</p>
+          <p className="text-xs text-[#878787]">Real store performance from your orders and earnings ({range.from} to {range.to})</p>
         </div>
         <div className="flex items-center gap-2">
           <ReportExportButton type="SALES" onDownload={() => handleDownload("Sales")} />
@@ -96,29 +119,36 @@ export default function SellerAnalyticsPage() {
         </div>
       </div>
 
-      {/* Summary Cards */}
       {summary && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
           <div className="rounded-sm border border-[#E0E0E0] bg-white p-4 shadow-sm">
             <div className="text-xs text-[#878787] uppercase tracking-wider font-bold">Total Revenue</div>
-            <div className="text-lg font-bold text-[#212121]">₹{summary.totalRevenue.toLocaleString("en-IN")}</div>
+            <div className="text-lg font-bold text-[#212121]">₹{Number(summary.totalRevenue || 0).toLocaleString("en-IN")}</div>
           </div>
           <div className="rounded-sm border border-[#E0E0E0] bg-white p-4 shadow-sm">
             <div className="text-xs text-[#878787] uppercase tracking-wider font-bold">Total Orders</div>
-            <div className="text-lg font-bold text-[#212121]">{summary.totalOrders}</div>
+            <div className="text-lg font-bold text-[#212121]">{Number(summary.totalOrders || 0)}</div>
+          </div>
+          <div className="rounded-sm border border-[#E0E0E0] bg-white p-4 shadow-sm">
+            <div className="text-xs text-[#878787] uppercase tracking-wider font-bold">Total Products</div>
+            <div className="text-lg font-bold text-[#212121]">{Number(summary.totalProducts || 0)}</div>
           </div>
           <div className="rounded-sm border border-[#E0E0E0] bg-white p-4 shadow-sm">
             <div className="text-xs text-[#878787] uppercase tracking-wider font-bold">Total Customers</div>
-            <div className="text-lg font-bold text-[#212121]">{summary.totalCustomers}</div>
+            <div className="text-lg font-bold text-[#212121]">{Number(summary.totalCustomers || 0)}</div>
           </div>
           <div className="rounded-sm border border-[#E0E0E0] bg-white p-4 shadow-sm">
             <div className="text-xs text-[#878787] uppercase tracking-wider font-bold">Avg. Conversion</div>
-            <div className="text-lg font-bold text-[#212121]">{summary.avgConversion}%</div>
+            <div className="text-lg font-bold text-[#212121]">{Number(summary.avgConversion || 0)}%</div>
+          </div>
+          <div className="rounded-sm border border-[#E0E0E0] bg-white p-4 shadow-sm">
+            <div className="text-xs text-[#878787] uppercase tracking-wider font-bold">Top Category</div>
+            <div className="text-lg font-bold text-[#212121] truncate" title={String(summary.topCategory || "N/A")}>{String(summary.topCategory || "N/A")}</div>
           </div>
         </div>
       )}
 
-      <div className="flex gap-2 text-xs mb-3">
+      <div className="flex flex-wrap gap-2 text-xs mb-1">
         {DATE_FILTERS.map((f) => (
           <button
             key={f.value}
@@ -138,17 +168,35 @@ export default function SellerAnalyticsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="rounded-sm border border-[#E0E0E0] bg-white p-4 shadow-sm">
           <h3 className="text-sm font-bold text-[#212121] mb-3">Revenue Trend</h3>
-          <RevenueAnalytics data={analyticsData} dataKey="revenue" />
+          {hasTrend ? (
+            <RevenueAnalytics data={analyticsData} dataKey="revenue" />
+          ) : (
+            <div className="h-[320px] flex items-center justify-center text-sm text-[#878787] border border-dashed border-[#E0E0E0] rounded-sm">
+              No revenue/order trend data for this period.
+            </div>
+          )}
         </div>
         <div className="rounded-sm border border-[#E0E0E0] bg-white p-4 shadow-sm">
           <h3 className="text-sm font-bold text-[#212121] mb-3">Sales by Category</h3>
-          <SalesByCategoryChart data={categorySales} />
+          {hasCategories ? (
+            <SalesByCategoryChart data={categorySales} />
+          ) : (
+            <div className="h-[320px] flex items-center justify-center text-sm text-[#878787] border border-dashed border-[#E0E0E0] rounded-sm">
+              No category sales data for this period.
+            </div>
+          )}
         </div>
       </div>
 
       <div className="rounded-sm border border-[#E0E0E0] bg-white p-4 shadow-sm">
         <h3 className="text-sm font-bold text-[#212121] mb-3">Product Performance</h3>
-        <ProductPerformanceChart data={productPerformance} />
+        {hasProducts ? (
+          <ProductPerformanceChart data={productPerformance} />
+        ) : (
+          <div className="h-[320px] flex items-center justify-center text-sm text-[#878787] border border-dashed border-[#E0E0E0] rounded-sm">
+            No product performance data for this period.
+          </div>
+        )}
       </div>
     </div>
   );

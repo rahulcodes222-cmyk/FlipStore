@@ -125,21 +125,28 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
     };
   }, [orderId]);
 
-  // Load current user's existing reviews for items in this purchased order (prevent duplicate review + show rating)
+  // Load current user's existing review for this order/product (allow repeat reviews on new orders)
   useEffect(() => {
     if (!order || !isReviewEligibleOrder) return;
     const uid = String((user as any)?.id || (user as any)?._id || "").trim();
     if (!uid) return;
     const productIds = Array.from(new Set((order.items || []).map((it: any) => String(it?.productId || "").trim()).filter(Boolean)));
     if (productIds.length === 0) return;
+    const orderIdsToMatch = new Set([String(order.id || "").trim(), String(order.orderNumber || "").trim()].filter(Boolean));
     let cancelled = false;
     (async () => {
       try {
         const entries = await Promise.all(productIds.map(async (pid) => {
           try {
             const reviews = await productService.getProductReviews(pid);
-            const mine = (reviews || []).find((r: any) => String(r?.userId || "") === uid) || null;
-            return [pid, mine] as const;
+            const mineForOrder = (reviews || []).find((r: any) => {
+              if (String(r?.userId || "") !== uid) return false;
+              const rid = String((r as any)?.orderId || "").trim();
+              if (rid && orderIdsToMatch.size > 0) return orderIdsToMatch.has(rid);
+              // Legacy fallback: if review has no orderId, treat as already reviewed for this product
+              return !rid;
+            }) || null;
+            return [pid, mineForOrder] as const;
           } catch {
             return [pid, null] as const;
           }
@@ -152,7 +159,7 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
         });
         setReviewedProducts((prev) => {
           const next = { ...prev };
-          for (const [pid, mine] of entries) if (mine) next[pid] = true;
+          for (const [pid, mine] of entries) next[pid] = !!mine;
           return next;
         });
       } catch {
@@ -234,9 +241,9 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
   };
 
   const handleSubmitReview = async (productId: string, productTitle: string) => {
-    if (!productId) return;
-    if (myReviews[productId]) {
-      toast({ type: "info", message: "You have already reviewed this product." });
+    if (!productId || !order) return;
+    if (myReviews[productId] || reviewedProducts[productId]) {
+      toast({ type: "info", message: "You have already reviewed this product for this order." });
       return;
     }
     const f = getReviewForm(productId);
@@ -252,16 +259,22 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
     }
     setReviewSubmitting(productId);
     try {
-      const res = await productService.createProductReview(productId, { rating: f.rating, title, comment });
+      const res = await productService.createProductReview(productId, {
+        rating: f.rating,
+        title,
+        comment,
+        orderId: String(order.id || order.orderNumber || ""),
+      });
       if (!res?.success) {
         const msg = String(res?.message || "Failed to submit review.");
         if (msg.toLowerCase().includes("already reviewed")) {
           setReviewedProducts((prev) => ({ ...prev, [productId]: true }));
-          // fetch existing review to display rating/content
+          // fetch existing review for this order to display rating/content
           try {
             const uid = String((user as any)?.id || (user as any)?._id || "").trim();
+            const orderIdsToMatch = new Set([String(order.id || "").trim(), String(order.orderNumber || "").trim()].filter(Boolean));
             const reviews = await productService.getProductReviews(productId);
-            const mine = uid ? (reviews || []).find((r: any) => String(r?.userId || "") === uid) || null : null;
+            const mine = uid ? (reviews || []).find((r: any) => String(r?.userId || "") === uid && (!r?.orderId || orderIdsToMatch.has(String(r.orderId)))) || null : null;
             if (mine) setMyReviews((prev) => ({ ...prev, [productId]: mine as any }));
           } catch {}
         }
@@ -274,8 +287,9 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
       } else {
         try {
           const uid = String((user as any)?.id || (user as any)?._id || "").trim();
+          const orderIdsToMatch = new Set([String(order.id || "").trim(), String(order.orderNumber || "").trim()].filter(Boolean));
           const reviews = await productService.getProductReviews(productId);
-          const mine = uid ? (reviews || []).find((r: any) => String(r?.userId || "") === uid) || null : null;
+          const mine = uid ? (reviews || []).find((r: any) => String(r?.userId || "") === uid && (!r?.orderId || orderIdsToMatch.has(String(r.orderId)))) || null : null;
           if (mine) setMyReviews((prev) => ({ ...prev, [productId]: mine as any }));
         } catch {}
       }
@@ -633,7 +647,7 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
                             <div className="rounded-sm border border-green-200 bg-green-50 p-3 space-y-1.5">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#388E3C]">
-                                  <CheckCircle2 size={13} /> Your review submitted
+                                  <CheckCircle2 size={13} /> Your review for this order
                                 </span>
                                 {myReviews[item.productId]?.rating != null && (
                                   <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#212121]">
@@ -710,7 +724,7 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
                                       Cancel
                                     </button>
                                   </div>
-                                  <p className="text-[10px] text-[#878787]">Only customers who purchased this product can submit a review. One review per product.</p>
+                                  <p className="text-[10px] text-[#878787]">Only customers who purchased this product can submit a review. One review per order.</p>
                                 </div>
                               )}
                             </>

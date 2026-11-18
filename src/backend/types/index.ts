@@ -865,6 +865,16 @@ export interface IShipmentDocument {
   deliveredAt?: Date;
   estimatedDelivery?: Date;
   statusHistory?: IOrderStatusHistoryEntry[];
+  // Shiprocket integration (optional)
+  shiprocketOrderId?: string;
+  shiprocketShipmentId?: string;
+  awbCode?: string;
+  courierName?: string;
+  labelUrl?: string;
+  manifestUrl?: string;
+  pickupScheduledAt?: Date;
+  lastShiprocketSyncAt?: Date;
+  shiprocketMeta?: any;
   createdAt: Date;
   updatedAt: Date;
 }

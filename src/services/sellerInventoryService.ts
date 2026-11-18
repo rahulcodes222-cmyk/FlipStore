@@ -27,7 +27,9 @@ function mapItem(i: any): InventoryItem {
     reservedStock: Number(i.reservedStock || 0),
     availableStock: Number(i.availableStock ?? Math.max(0, Number(i.stock || 0) - Number(i.reservedStock || 0))),
     lastUpdated: i.lastUpdated || i.updatedAt || new Date().toISOString(),
-  } as InventoryItem;
+    ...(i.variantId ? { variantId: String(i.variantId) } : {}),
+    ...(i.variantLabel ? { variantLabel: String(i.variantLabel) } : {}),
+  } as any;
 }
 
 export const sellerInventoryService = {
@@ -48,20 +50,56 @@ export const sellerInventoryService = {
       outOfStock: items.filter((i: InventoryItem) => i.status === "OUT_OF_STOCK").length,
     };
   },
-  async updateStock(_sellerId: string, productId: string, stock: number): Promise<InventoryItem | null> {
-    await api<any>(`/api/v1/vendor/inventory/${productId}`, { method: "PATCH", body: JSON.stringify({ stock, reason: "manual_stock_update" }) });
+  async updateStock(_sellerId: string, productId: string, stock: number, variant?: { variantId?: string; sku?: string }): Promise<InventoryItem | null> {
+    await api<any>(`/api/v1/vendor/inventory/${productId}`, {
+      method: "PATCH",
+      body: JSON.stringify({
+        stock,
+        ...(variant?.variantId ? { variantId: variant.variantId } : {}),
+        ...(variant?.sku ? { sku: variant.sku } : {}),
+        reason: "manual_stock_update",
+      }),
+    });
     const items = await this.getInventory(_sellerId);
-    return items.find((i) => i.productId === productId) || null;
+    const sku = variant?.sku ? String(variant.sku) : "";
+    return items.find((i: any) => i.productId === productId && (!sku || String(i.sku || "") === sku)) || items.find((i) => i.productId === productId) || null;
   },
-  async bulkUpdateStock(_sellerId: string, updates: { productId: string; stock: number }[]): Promise<InventoryItem[]> {
-    const results: InventoryItem[] = [];
-    for (const u of updates) { const r = await this.updateStock("", u.productId, u.stock); if (r) results.push(r); }
-    return results;
+  async bulkUpdateStock(_sellerId: string, updates: { productId: string; stock: number; variantId?: string; sku?: string }[]): Promise<InventoryItem[]> {
+    if (updates.length === 0) return [];
+    for (const u of updates) {
+      const pid = String(u.productId || "");
+      if (!pid) continue;
+      await api<any>(`/api/v1/vendor/inventory/${pid}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          stock: Math.max(0, Number(u.stock || 0)),
+          ...(u.variantId ? { variantId: u.variantId } : {}),
+          ...(u.sku ? { sku: u.sku } : {}),
+          reason: "manual_stock_update",
+        }),
+      });
+    }
+    const refreshed = await this.getInventory(_sellerId);
+    const wanted = new Set(updates.map((u) => String(u.productId || "")));
+    return refreshed.filter((i) => wanted.has(String(i.productId || "")));
   },
   async getStockHistory(_sellerId: string): Promise<StockHistoryEntry[]> {
     const data = await api<any>(`/api/v1/vendor/inventory/history?limit=50`);
     const rows = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
-    return rows.map((r: any) => ({ id: r.id || String(r._id), productId: r.productId, productName: r.productName || "Product", type: r.type || "ADJUSTMENT", quantity: Number(r.quantity || 0), reason: r.reason || "", referenceId: r.referenceId, createdAt: r.createdAt || new Date().toISOString() })) as StockHistoryEntry[];
+    return rows.map((r: any) => {
+      const rawType = String(r.type || "ADJUSTMENT").toUpperCase();
+      const type = rawType === "IN" ? "IN" : rawType === "OUT" ? "OUT" : "ADJUST";
+      return {
+        id: r.id || String(r._id || `${r.productId}:${r.createdAt || Math.random()}`),
+        productId: String(r.productId || ""),
+        productName: r.productName || "Product",
+        type,
+        quantity: Math.abs(Number(r.quantity || 0)),
+        reason: r.reason || "",
+        referenceId: r.referenceId || r.orderId || r.subOrderId,
+        createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
+      } as StockHistoryEntry;
+    });
   },
   async searchInventory(_sellerId: string, query: string): Promise<InventoryItem[]> {
     const data = await api<any>(`/api/v1/vendor/inventory?search=${encodeURIComponent(query)}&limit=200`);

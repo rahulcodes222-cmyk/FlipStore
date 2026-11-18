@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -11,6 +11,7 @@ import { authService, DEMO_CREDENTIALS } from "@/services/authService";
 import { useToast } from "@/components/common/Toast";
 import { Button } from "@/components/ui/button";
 import { InputField } from "@/components/common/InputField";
+import { useHydration } from "@/hooks/useHydration";
 import {
   Eye,
   EyeOff,
@@ -80,9 +81,14 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const { toast } = useToast();
   const setUser = useAuthStore((state) => state.setUser);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const isHydrated = useHydration();
 
   const [showPassword, setShowPassword] = useState(false);
   const [isQuickLoading, setIsQuickLoading] = useState<string | null>(null);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
+  const googleBtnRef = useRef<HTMLDivElement>(null);
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 
   const redirectTo = searchParams.get("redirect") || "/";
 
@@ -98,6 +104,82 @@ export default function LoginPage() {
   });
 
   const passwordValue = watch("password");
+
+  useEffect(() => {
+    if (isHydrated && isAuthenticated) {
+      router.replace(redirectTo);
+    }
+  }, [isHydrated, isAuthenticated, redirectTo, router]);
+
+  useEffect(() => {
+    if (!googleClientId) return;
+    let cancelled = false;
+    const init = () => {
+      if (cancelled) return;
+      const g = (window as any).google?.accounts?.id;
+      if (!g || !googleBtnRef.current) return;
+      try {
+        g.initialize({
+          client_id: googleClientId,
+          callback: async (resp: any) => {
+            if (!resp?.credential) return;
+            setIsGoogleLoading(true);
+            try {
+              const { user } = await authService.loginWithGoogle(resp.credential);
+              setUser(user);
+              toast({
+                type: "success",
+                title: `Welcome, ${user.name.split(" ")[0]}!`,
+                message: "Signed in with Google.",
+                duration: 3000,
+              });
+              router.push(redirectTo);
+            } catch (err: any) {
+              toast({ type: "error", title: "Google Login Failed", message: err?.message || "Google login failed." });
+            } finally {
+              if (!cancelled) setIsGoogleLoading(false);
+            }
+          },
+          ux_mode: "popup",
+        });
+        googleBtnRef.current.innerHTML = "";
+        g.renderButton(googleBtnRef.current, {
+          theme: "outline",
+          size: "large",
+          text: "continue_with",
+          shape: "rectangular",
+          width: 360,
+        });
+      } catch {
+        // ignore init/render failures; existing login remains functional
+      }
+    };
+
+    if ((window as any).google?.accounts?.id) {
+      init();
+      return () => { cancelled = true; };
+    }
+    const existing = document.querySelector('script[src="https://accounts.google.com/gsi/client"]') as HTMLScriptElement | null;
+    if (existing) {
+      existing.addEventListener("load", init);
+      return () => { cancelled = true; existing.removeEventListener("load", init); };
+    }
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.onload = init;
+    document.body.appendChild(script);
+    return () => { cancelled = true; };
+  }, [googleClientId, redirectTo, router, setUser, toast]);
+
+  if (isHydrated && isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#F1F3F6] flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-[#2874F0] border-t-transparent rounded-full animate-spin" aria-label="Redirecting" />
+      </div>
+    );
+  }
 
   // ── Form submission ──────────────────────────────────────────────────────────
   const onSubmit = async (data: LoginFormData) => {
@@ -290,6 +372,22 @@ export default function LoginPage() {
               Login
             </Button>
           </form>
+          {googleClientId ? (
+            <div className="mt-4">
+              <div className="flex items-center gap-3 my-3">
+                <div className="h-px flex-1 bg-[#E0E0E0]" />
+                <span className="text-[11px] text-[#878787] font-medium">OR</span>
+                <div className="h-px flex-1 bg-[#E0E0E0]" />
+              </div>
+              <div className="w-full overflow-hidden">
+                <div ref={googleBtnRef} className="w-full min-h-[40px] flex justify-center" />
+              </div>
+              {isGoogleLoading && (
+                <p className="text-xs text-[#2874F0] mt-2 text-center">Signing in with Google...</p>
+              )}
+            </div>
+          ) : null}
+
 
           {/* ── Demo accounts ─────────────────────────────────────────────── */}
           <div className="mt-6 pt-5 border-t border-[#F0F0F0]">

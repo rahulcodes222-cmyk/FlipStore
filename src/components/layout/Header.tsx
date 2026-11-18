@@ -23,6 +23,7 @@ import { useHydration } from "@/hooks/useHydration";
 import { SearchBar } from "@/components/layout/SearchBar";
 import { CategoryNavigation } from "@/components/layout/CategoryNavigation";
 import { MobileMenu } from "@/components/layout/MobileMenu";
+import { DeliveryLocationSelector } from "@/components/layout/DeliveryLocationSelector";
 import { cn } from "@/lib/utils";
 
 export function Header() {
@@ -124,6 +125,11 @@ export function Header() {
               >
                 <Search size={22} />
               </button>
+
+              {/* Delivery Location (right side on desktop/tablet) */}
+              <div className="hidden sm:flex items-center">
+                <DeliveryLocationSelector compact />
+              </div>
 
               {/* Account / Login Trigger & Dropdown */}
               <div className="relative" ref={userDropdownRef}>
@@ -236,14 +242,15 @@ export function Header() {
                 )}
               </div>
 
-              {/* Become a Seller (Desktop) */}
+              {/* Become a Seller (Desktop) - temporarily hidden
               <Link
                 href="/sell"
-                className="hidden lg:flex items-center gap-1.5 text-white px-2 py-1.5 text-sm font-medium hover:text-[#ffe500] transition-colors whitespace-nowrap"
+                className="hidden xl:flex items-center gap-1.5 text-white text-sm font-semibold hover:text-[#ffe500] transition-colors"
               >
                 <Store size={17} />
                 <span>Become a Seller</span>
               </Link>
+              */}
 
               {/* Wishlist Link (Desktop & Tablet) */}
               <Link
@@ -279,6 +286,11 @@ export function Header() {
                 <span className="hidden sm:inline">Cart</span>
               </Link>
             </div>
+          </div>
+
+          {/* Mobile delivery location */}
+          <div className="sm:hidden mt-2 pt-2 border-t border-white/20">
+            <DeliveryLocationSelector compact />
           </div>
 
           {/* Mobile Search Overlay Bar */}

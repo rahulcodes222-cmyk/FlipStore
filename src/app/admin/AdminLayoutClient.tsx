@@ -23,6 +23,7 @@ import {
   LogOut,
   Store,
   BadgeCheck,
+  LifeBuoy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -38,6 +39,7 @@ const NAV_ITEMS = [
   { label: "Orders", href: "/admin/orders", icon: ShoppingBag },
   { label: "Customers", href: "/admin/customers", icon: Users },
   { label: "Seller Requests", href: "/admin/vendors", icon: Store },
+  { label: "Seller Support", href: "/admin/support-tickets", icon: LifeBuoy },
   { label: "Coupons", href: "/admin/coupons", icon: Ticket },
   { label: "Reviews", href: "/admin/reviews", icon: Star },
   { label: "Settings", href: "/admin/settings", icon: Settings },

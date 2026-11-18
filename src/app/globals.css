@@ -248,3 +248,9 @@ button {
   border-radius: 3px;
   padding: 2px 6px;
 }
+
+@keyframes flipstore-marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+

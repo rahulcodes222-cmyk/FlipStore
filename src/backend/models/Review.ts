@@ -101,6 +101,8 @@ reviewSchema.index({ status: 1 });
 reviewSchema.index({ rating: 1 });
 reviewSchema.index({ productId: 1, status: 1 });
 reviewSchema.index({ productId: 1, rating: -1 });
+// Allow one review per purchased order (repeat orders can be reviewed again).
+reviewSchema.index({ userId: 1, orderId: 1 }, { unique: true, sparse: true });
 
 const ReviewModel: Model<IReviewDocument> =
   (mongoose.models.Review as Model<IReviewDocument> | undefined) ||

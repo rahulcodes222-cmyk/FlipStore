@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Search, Filter, Star, Clock, RefreshCcw, Reply } from "lucide-react";
+import { Search, RefreshCcw, Star } from "lucide-react";
 import { useHydration } from "@/hooks/useHydration";
 import { useSellerStore } from "@/store/useSellerStore";
 import { sellerReviewService } from "@/services";
@@ -11,7 +10,6 @@ import { useToast } from "@/components/common/Toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SellerStatsCard } from "@/components/seller/SellerStatsCard";
-import { SellerStatusBadge } from "@/components/seller/SellerStatusBadge";
 import { cn } from "@/lib/utils";
 import type { SellerReview, ReviewStatus } from "@/types";
 
@@ -24,8 +22,7 @@ const REVIEW_STATUS_CONFIG: Record<ReviewStatus, { bg: string; text: string; bor
 export default function SellerReviewsPage() {
   const isHydrated = useHydration();
   const { seller } = useSellerStore();
-  const { toast, success, error } = useToast();
-  const router = useRouter();
+  const { error } = useToast();
   const currentSeller = isHydrated ? seller : null;
   const sellerId = currentSeller?.id || "slr-001";
 
@@ -36,90 +33,64 @@ export default function SellerReviewsPage() {
   const [statusFilter, setStatusFilter] = useState<ReviewStatus | "">("");
   const [ratingFilter, setRatingFilter] = useState("");
 
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [items, s] = await Promise.all([
+        sellerReviewService.getReviews(sellerId),
+        sellerReviewService.getReviewStats(sellerId),
+      ]);
+      setReviews(Array.isArray(items) ? items : []);
+      setStats(s || null);
+    } catch (e: any) {
+      error(e?.message || "Failed to load reviews");
+      setReviews([]);
+      setStats({ total: 0, approved: 0, pending: 0, rejected: 0, avgRating: 0 });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const [items, s] = await Promise.all([
-          sellerReviewService.getReviews(sellerId),
-          sellerReviewService.getReviewStats(sellerId),
-        ]);
-        if (mounted) {
-          setReviews(items);
-          setStats(s);
-        }
-      } catch {
-        error("Failed to load reviews");
-      } finally {
-        if (mounted) setLoading(false);
-    }
-    };
-    load();
-    return () => {
-      mounted = false;
-    };
-  }, [sellerId, toast]);
+    if (!isHydrated) return;
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sellerId, isHydrated]);
 
-  const filteredReviews = reviews.filter((r) => {
-    const q = search.toLowerCase();
-    const matchesSearch =
-      r.productName.toLowerCase().includes(q) ||
-      r.customerName.toLowerCase().includes(q) ||
-      r.comment.toLowerCase().includes(q);
+  const filteredReviews = useMemo(() => reviews.filter((r) => {
+    const q = search.toLowerCase().trim();
+    const matchesSearch = !q ||
+      String(r.productName || "").toLowerCase().includes(q) ||
+      String(r.customerName || "").toLowerCase().includes(q) ||
+      String(r.comment || "").toLowerCase().includes(q) ||
+      String(r.title || "").toLowerCase().includes(q);
     const matchesStatus = !statusFilter || r.status === statusFilter;
-    const matchesRating = !ratingFilter || r.rating === parseInt(ratingFilter);
+    const matchesRating = !ratingFilter || r.rating === parseInt(ratingFilter, 10);
     return matchesSearch && matchesStatus && matchesRating;
-  });
-
-  const handleApprove = async (reviewId: string) => {
-    try {
-      await sellerReviewService.updateReviewStatus(sellerId, reviewId, "APPROVED");
-      success("Review approved");
-      const items = await sellerReviewService.getReviews(sellerId);
-      const s = await sellerReviewService.getReviewStats(sellerId);
-      setReviews(items);
-      setStats(s);
-    } catch {
-      error("Failed to approve review");
-    }
-  };
-
-  const handleReject = async (reviewId: string) => {
-    try {
-      await sellerReviewService.updateReviewStatus(sellerId, reviewId, "REJECTED");
-      success("Review rejected");
-      const items = await sellerReviewService.getReviews(sellerId);
-      const s = await sellerReviewService.getReviewStats(sellerId);
-      setReviews(items);
-      setStats(s);
-    } catch {
-      error("Failed to reject review");
-    }
-  };
+  }), [reviews, search, statusFilter, ratingFilter]);
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-lg font-bold text-[#212121]">Reviews</h1>
-          <p className="text-xs text-[#878787]">Manage customer reviews for your products</p>
+          <p className="text-xs text-[#878787]">Customer reviews for products you added (seller-owned products only)</p>
         </div>
         <Link
           href="/seller/dashboard"
           className="text-[11px] font-semibold text-[#2874F0] hover:underline flex items-center gap-1"
         >
-          <span>← Back to Dashboard</span>
+          <span>? Back to Dashboard</span>
         </Link>
       </div>
 
       {stats && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          <SellerStatsCard title="Total Reviews" value={stats.total} variant="products" subtitle="All reviews" />
+          <SellerStatsCard title="Total Reviews" value={stats.total} variant="products" subtitle="Your products" />
           <SellerStatsCard title="Avg Rating" value={stats.avgRating} variant="earnings" subtitle="Out of 5" />
-          <SellerStatsCard title="Approved" value={stats.approved} variant="products" subtitle="Live on store" />
-          <SellerStatsCard title="Pending" value={stats.pending} variant="pending" subtitle="Awaiting review" />
-          <SellerStatsCard title="Rejected" value={stats.rejected} variant="cancelled" subtitle="Not published" />
+          <SellerStatsCard title="Approved" value={stats.approved} variant="products" subtitle="Published" />
+          <SellerStatsCard title="Pending" value={stats.pending} variant="pending" subtitle="Awaiting action" />
+          <SellerStatsCard title="Rejected" value={stats.rejected} variant="cancelled" subtitle="Not shown" />
         </div>
       )}
 
@@ -129,7 +100,7 @@ export default function SellerReviewsPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by product, customer or comment…"
+            placeholder="Search by product, customer, title or comment…"
             className="pl-10"
           />
         </div>
@@ -151,11 +122,11 @@ export default function SellerReviewsPage() {
           <option value="">All Ratings</option>
           {[5, 4, 3, 2, 1].map((r) => (
             <option key={r} value={String(r)}>
-              {r} ★
+              {r} ?
             </option>
           ))}
         </select>
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
           <RefreshCcw size={16} /> Refresh
         </Button>
       </div>
@@ -171,20 +142,20 @@ export default function SellerReviewsPage() {
                 <th className="px-4 py-3 text-left text-[10px] font-bold text-[#878787] uppercase">Review</th>
                 <th className="px-4 py-3 text-left text-[10px] font-bold text-[#878787] uppercase">Status</th>
                 <th className="px-4 py-3 text-left text-[10px] font-bold text-[#878787] uppercase">Date</th>
-                <th className="px-4 py-3 text-left text-[10px] font-bold text-[#878787] uppercase">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F0F0F0]">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center">
+                  <td colSpan={6} className="px-4 py-8 text-center">
                     <div className="h-24 rounded-sm bg-[#E8E8E8] animate-skeleton w-3/4 mx-auto" />
                   </td>
                 </tr>
               ) : filteredReviews.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center">
-                    <p className="text-sm text-[#878787]">No reviews found.</p>
+                  <td colSpan={6} className="px-4 py-10 text-center">
+                    <p className="text-sm text-[#878787]">No reviews found for your products.</p>
+                    <p className="text-[11px] text-[#9E9E9E] mt-1">Reviews appear here only for products added by this seller account.</p>
                   </td>
                 </tr>
               ) : (
@@ -203,22 +174,14 @@ export default function SellerReviewsPage() {
                             {review.productName.charAt(0)}
                           </div>
                         )}
-                        <div className="text-sm font-medium text-[#212121] truncate max-w-[120px]">{review.productName}</div>
+                        <div className="text-sm font-medium text-[#212121] truncate max-w-[140px]" title={review.productName}>{review.productName}</div>
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        {review.customerAvatar ? (
-                          <img
-                            src={review.customerAvatar}
-                            alt=""
-                            className="w-6 h-6 rounded-full object-cover border border-[#E0E0E0]"
-                          />
-                        ) : (
-                          <div className="w-6 h-6 rounded-full bg-[#F1F3F6] flex items-center justify-center text-[10px] font-bold text-[#878787]">
-                            {review.customerName.charAt(0)}
-                          </div>
-                        )}
+                        <div className="w-6 h-6 rounded-full bg-[#F1F3F6] flex items-center justify-center text-[10px] font-bold text-[#878787]">
+                          {review.customerName.charAt(0)}
+                        </div>
                         <div className="text-sm text-[#212121]">{review.customerName}</div>
                         {review.isVerifiedPurchase && (
                           <span className="text-[10px] text-[#2874F0] font-bold">Verified</span>
@@ -233,9 +196,9 @@ export default function SellerReviewsPage() {
                         <span className="text-xs text-[#878787] ml-1">{review.rating}</span>
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-sm text-[#212121]">
-                      <div className="font-medium">{review.title}</div>
-                      <div className="text-[10px] text-[#878787] mt-1">{review.comment}</div>
+                    <td className="px-4 py-3 text-sm text-[#212121] max-w-[360px]">
+                      <div className="font-medium truncate" title={review.title}>{review.title}</div>
+                      <div className="text-[10px] text-[#878787] mt-1 line-clamp-2" title={review.comment}>{review.comment}</div>
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -249,40 +212,8 @@ export default function SellerReviewsPage() {
                         {REVIEW_STATUS_CONFIG[review.status].label}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-[#212121]">
-                      {new Date(review.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1">
-                        {review.status === "PENDING" && (
-                          <>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleApprove(review.id)}
-                              className="text-[#2E7D32] border-[#C8E6C9] hover:bg-[#E8F5E9]"
-                            >
-                              Approve
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleReject(review.id)}
-                              className="text-[#C62828] border-[#FFCDD2] hover:bg-[#FFEBEE]"
-                            >
-                              Reject
-                            </Button>
-                          </>
-                        )}
-                        {review.status === "APPROVED" && !review.sellerReply && (
-                          <Button variant="outline" size="sm" onClick={() => router.push(`/seller/reviews/${review.id}/reply`)}>
-                            Reply
-                          </Button>
-                        )}
-                        {review.sellerReply && (
-                          <span className="text-[10px] text-[#2E7D32] font-medium">Replied</span>
-                        )}
-                      </div>
+                    <td className="px-4 py-3 text-sm text-[#212121] whitespace-nowrap">
+                      {new Date(review.createdAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                     </td>
                   </tr>
                 ))

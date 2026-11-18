@@ -306,8 +306,9 @@ export const addressPatch = withDatabase(withAuth(async (authReq) => {
 
   // Parse and validate URL params
   const url = new URL(authReq.url);
-  const pathSegments = url.pathname.split('/');
-  const addressId = pathSegments[pathSegments.length - 2]; // /api/v1/users/addresses/:id
+  const pathSegments = url.pathname.split('/').filter(Boolean);
+  // /api/v1/users/addresses/:id -> last segment is the address id
+  const addressId = pathSegments[pathSegments.length - 1];
 
   const paramResult = addressIdParamSchema.safeParse({ id: addressId });
   if (!paramResult.success) {
@@ -385,8 +386,9 @@ export const addressDelete = withDatabase(withAuth(async (authReq) => {
 
   // Parse and validate URL params
   const url = new URL(authReq.url);
-  const pathSegments = url.pathname.split('/');
-  const addressId = pathSegments[pathSegments.length - 2];
+  const pathSegments = url.pathname.split('/').filter(Boolean);
+  // /api/v1/users/addresses/:id -> last segment is the address id
+  const addressId = pathSegments[pathSegments.length - 1];
 
   const paramResult = addressIdParamSchema.safeParse({ id: addressId });
   if (!paramResult.success) {
@@ -457,10 +459,10 @@ export const addressDefaultPatch = withDatabase(withAuth(async (authReq) => {
 
   // Parse and validate URL params
   const url = new URL(authReq.url);
-  const pathSegments = url.pathname.split('/');
-  // Path is /api/v1/users/addresses/:id/default
-  // pathSegments = ['', 'api', 'v1', 'users', 'addresses', ':id', 'default']
-  const addressId = pathSegments[pathSegments.length - 3];
+  const pathSegments = url.pathname.split('/').filter(Boolean);
+  // Path is /api/v1/users/addresses/:id/default -> id is before 'default'
+  const defaultIdx = pathSegments.lastIndexOf('default');
+  const addressId = defaultIdx > 0 ? pathSegments[defaultIdx - 1] : pathSegments[pathSegments.length - 2];
 
   const paramResult = addressIdParamSchema.safeParse({ id: addressId });
   if (!paramResult.success) {

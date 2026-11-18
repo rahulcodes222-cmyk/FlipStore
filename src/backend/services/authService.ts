@@ -6,13 +6,13 @@
 
 import { UserModel, VendorModel } from '@/backend/models';
 import mongoose from 'mongoose';
+import crypto from 'crypto';
 import {
   hashPassword,
   comparePassword,
   validatePasswordStrength,
 } from '@/backend/utils/password';
 import { signAccessToken, signRefreshToken, verifyAccessToken, verifyRefreshToken } from '@/backend/utils/jwt';
-import { createErrorResponse } from '@/backend/utils/response';
 import { HTTP_STATUS, canVendorAccessDashboard, normalizeVendorApplicationStatus } from '@/backend/constants';
 import { env } from '@/backend/config/env';
 import type { IUserDocument, JWTPayload, AuthTokens } from '@/backend/types';
@@ -172,6 +172,93 @@ export async function loginUser(data: LoginInput): Promise<AuthResult> {
   user.lastLoginAt = new Date();
   await user.save();
 
+  return { user, tokens };
+}
+
+/**
+ * Login or register with Google ID token credential.
+ */
+export async function loginWithGoogle(credential: string): Promise<AuthResult> {
+  const token = String(credential || '').trim();
+  if (!token) throw new Error('Google credential is required.');
+
+  const clientId = (env.googleClientId || env.publicGoogleClientId || '').trim();
+  if (!clientId) throw new Error('Google login is not configured.');
+
+  const verifyRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(token)}`);
+  const payload = await verifyRes.json().catch(() => null) as any;
+  if (!verifyRes.ok || !payload?.email || !payload?.sub) {
+    throw new Error('Invalid Google sign-in token.');
+  }
+  if (String(payload.aud || '') !== clientId) {
+    throw new Error('Google sign-in token audience mismatch.');
+  }
+  const emailVerified = payload.email_verified === true || String(payload.email_verified) === 'true';
+  if (!emailVerified) {
+    throw new Error('Google email is not verified.');
+  }
+
+  const email = String(payload.email).toLowerCase().trim();
+  const name = String(payload.name || payload.given_name || email.split('@')[0] || 'User').trim().slice(0, 60) || 'User';
+  const picture = String(payload.picture || '').trim();
+  const googleSub = String(payload.sub || '').trim();
+
+  let user = (await (UserModel as any).findOne({ email }).exec()) as IUserDocument | null;
+  if (!user) {
+    const randomPassword = `${crypto.randomUUID()}A1!`;
+    const passwordHash = await hashPassword(randomPassword);
+    const phonePlaceholder = `9${googleSub.replace(/\D/g, '').slice(-9).padStart(9, '0')}`;
+    user = await UserModel.create({
+      name,
+      email,
+      phone: phonePlaceholder,
+      passwordHash,
+      role: 'customer' as UserRoleType,
+      avatar: picture || '',
+      isEmailVerified: true,
+      isPhoneVerified: false,
+      isActive: true,
+      lastLoginAt: new Date(),
+    } as any);
+  } else {
+    if (!user.isActive) {
+      throw new Error('Account is deactivated. Please contact support.');
+    }
+
+    if (user.role === 'vendor') {
+      let vendor: any = null;
+      const vendorId = (user as any).vendorId;
+      if (vendorId && mongoose.Types.ObjectId.isValid(String(vendorId))) {
+        vendor = await (VendorModel as any).findById(vendorId).lean().exec();
+      }
+      if (!vendor) {
+        vendor = await (VendorModel as any).findOne({ userId: user._id }).lean().exec();
+      }
+      const applicationStatus = normalizeVendorApplicationStatus(
+        vendor?.applicationStatus || vendor?.approvalStatus || (user as any).vendorApplicationStatus,
+      );
+      if (!canVendorAccessDashboard(applicationStatus)) {
+        if (applicationStatus === 'Rejected') {
+          throw new Error('Your seller application was rejected. Please update and resubmit your application.');
+        }
+        if (applicationStatus === 'Suspended') {
+          throw new Error('Your seller account is suspended. Please contact support.');
+        }
+        throw new Error('Your seller account is pending approval and is not available until approved by admin.');
+      }
+      (user as any).vendorApplicationStatus = applicationStatus;
+      (user as any).isVendorApproved = true;
+    }
+
+    let changed = false;
+    if (picture && !user.avatar) { (user as any).avatar = picture; changed = true; }
+    if (!user.isEmailVerified) { (user as any).isEmailVerified = true; changed = true; }
+    user.lastLoginAt = new Date();
+    changed = true;
+    if (changed) await user.save();
+  }
+
+  const tokens = await generateTokens(user);
   return { user, tokens };
 }
 

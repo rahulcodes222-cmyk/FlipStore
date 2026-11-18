@@ -143,21 +143,27 @@ export function HeroSlider({
       </div>
 
       {/* Manual Left/Right Arrow Controls */}
-      <button
-        onClick={prevSlide}
-        className="absolute left-2 sm:left-4 top-1/2 -translate-y-1/2 z-20 w-8 h-14 sm:w-10 sm:h-20 bg-white/80 hover:bg-white text-[#212121] flex items-center justify-center rounded-r-xs shadow-lg transition-all hover:scale-105 active:scale-95 cursor-pointer"
-        aria-label="Previous slide"
-      >
-        <ChevronLeft size={24} />
-      </button>
+      {total > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={prevSlide}
+            className="group absolute left-0 sm:left-0 top-1/2 -translate-y-1/2 z-20 h-14 w-8 sm:h-24 sm:w-11 flex items-center justify-center bg-black/30 hover:bg-black/50 text-white rounded-r-md sm:rounded-r-lg shadow-[0_2px_8px_rgba(0,0,0,0.18)] border border-l-0 border-white/20 transition-all hover:shadow-[0_4px_12px_rgba(0,0,0,0.22)] active:scale-95 cursor-pointer"
+            aria-label="Previous slide"
+          >
+            <ChevronLeft size={22} className="sm:w-6 sm:h-6" />
+          </button>
 
-      <button
-        onClick={nextSlide}
-        className="absolute right-2 sm:right-4 top-1/2 -translate-y-1/2 z-20 w-8 h-14 sm:w-10 sm:h-20 bg-white/80 hover:bg-white text-[#212121] flex items-center justify-center rounded-l-xs shadow-lg transition-all hover:scale-105 active:scale-95 cursor-pointer"
-        aria-label="Next slide"
-      >
-        <ChevronRight size={24} />
-      </button>
+          <button
+            type="button"
+            onClick={nextSlide}
+            className="group absolute right-0 sm:right-0 top-1/2 -translate-y-1/2 z-20 h-14 w-8 sm:h-24 sm:w-11 flex items-center justify-center bg-black/30 hover:bg-black/50 text-white rounded-l-md sm:rounded-l-lg shadow-[0_2px_8px_rgba(0,0,0,0.18)] border border-r-0 border-white/20 transition-all hover:shadow-[0_4px_12px_rgba(0,0,0,0.22)] active:scale-95 cursor-pointer"
+            aria-label="Next slide"
+          >
+            <ChevronRight size={22} className="sm:w-6 sm:h-6" />
+          </button>
+        </>
+      )}
 
       {/* Slide Indicator Dots */}
       <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">

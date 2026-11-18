@@ -17,6 +17,7 @@ export const createProductReviewSchema = z.object({
     .min(10, "Review comment must be at least 10 characters.")
     .max(2000, "Review comment must not exceed 2000 characters."),
   images: z.array(z.string().trim().min(1)).max(5).optional().default([]),
+  orderId: z.string().trim().min(1).optional(),
 });
 
 export const productReviewParamsSchema = z.object({

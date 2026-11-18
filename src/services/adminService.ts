@@ -539,6 +539,32 @@ export const adminService = {
   },
 
   // ── Reviews (DB-backed via admin API) ──────────────────────────────────────
+  async getSupportTickets(params?: { status?: string; search?: string }) {
+    const sp = new URLSearchParams();
+    if (params?.status) sp.set("status", params.status);
+    if (params?.search) sp.set("search", params.search);
+    const res = await adminFetch(`${API_BASE}/api/v1/admin/support-tickets${sp.toString() ? `?${sp.toString()}` : ""}`, { method: "GET" });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || body?.error?.message || "Failed to fetch support tickets.");
+    }
+    const payload = body?.data;
+    return Array.isArray(payload?.tickets) ? payload.tickets : Array.isArray(payload) ? payload : [];
+  },
+
+  async updateSupportTicketStatus(id: string, status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED") {
+    const res = await adminFetch(`${API_BASE}/api/v1/admin/support-tickets/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    const body = await res.json().catch(() => ({} as any));
+    if (!res.ok || body?.success === false) {
+      throw new Error(body?.message || body?.error?.message || "Failed to update support ticket.");
+    }
+    return body?.data?.ticket || null;
+  },
+
   async getReviews(ratingFilter?: number): Promise<Review[]> {
     const sp = new URLSearchParams();
     if (ratingFilter && ratingFilter > 0) sp.set("rating", String(ratingFilter));

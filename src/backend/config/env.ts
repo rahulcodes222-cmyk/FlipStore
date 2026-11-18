@@ -57,6 +57,12 @@ const getters: Record<string, () => unknown> = {
   notificationSmsProvider: () => getOptional('NOTIFICATION_SMS_PROVIDER', ''),
   notificationSmsFrom: () => getOptional('NOTIFICATION_SMS_FROM', ''),
   notificationSmsApiKey: () => getOptional('NOTIFICATION_SMS_API_KEY', ''),
+  shiprocketEmail: () => getOptional('SHIPROCKET_EMAIL', ''),
+  shiprocketPassword: () => getOptional('SHIPROCKET_PASSWORD', ''),
+  shiprocketApiBase: () => getOptional('SHIPROCKET_API_BASE', 'https://apiv2.shiprocket.in/v1/external'),
+  googleClientId: () => getOptional('GOOGLE_CLIENT_ID', ''),
+  googleClientSecret: () => getOptional('GOOGLE_CLIENT_SECRET', ''),
+  publicGoogleClientId: () => getOptional('NEXT_PUBLIC_GOOGLE_CLIENT_ID', ''),
 };
 
 type EnvShape = {
@@ -90,6 +96,12 @@ type EnvShape = {
   notificationSmsProvider: string;
   notificationSmsFrom: string;
   notificationSmsApiKey: string;
+  shiprocketEmail: string;
+  shiprocketPassword: string;
+  shiprocketApiBase: string;
+  googleClientId: string;
+  googleClientSecret: string;
+  publicGoogleClientId: string;
 };
 
 export const env = new Proxy({} as EnvShape, {

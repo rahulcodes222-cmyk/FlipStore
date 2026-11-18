@@ -1,14 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import {
   Search,
-  PackageCheck,
   RefreshCcw,
   Clock,
-  AlertTriangle,
-  Edit3,
 } from "lucide-react";
 import { useHydration } from "@/hooks/useHydration";
 import { useSellerStore } from "@/store/useSellerStore";
@@ -16,10 +12,9 @@ import { sellerInventoryService } from "@/services";
 import { useToast } from "@/components/common/Toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SellerStatsCard } from "@/components/seller/SellerStatsCard";
 import { cn } from "@/lib/utils";
-import type { InventoryItem, StockStatus } from "@/types";
+import type { InventoryItem, StockHistoryEntry, StockStatus } from "@/types";
 
 const STOCK_STATUS_CONFIG: Record<StockStatus, { bg: string; text: string; border: string }> = {
   IN_STOCK: { bg: "bg-[#E8F5E9]", text: "text-[#2E7D32]", border: "border-[#C8E6C9]" },
@@ -30,43 +25,56 @@ const STOCK_STATUS_CONFIG: Record<StockStatus, { bg: string; text: string; borde
 export default function SellerInventoryPage() {
   const isHydrated = useHydration();
   const { seller } = useSellerStore();
-  const { toast, success, error } = useToast();
-  const router = useRouter();
+  const { success, error } = useToast();
   const currentSeller = isHydrated ? seller : null;
   const sellerId = currentSeller?.id || "slr-001";
 
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [stats, setStats] = useState<any>(null);
+  const [history, setHistory] = useState<StockHistoryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [stockFilter, setStockFilter] = useState<StockStatus | "">("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editStock, setEditStock] = useState("");
 
+  const loadAll = async () => {
+    const [items, s, hist] = await Promise.all([
+      sellerInventoryService.getInventory(sellerId),
+      sellerInventoryService.getInventoryStats(sellerId),
+      sellerInventoryService.getStockHistory(sellerId).catch(() => [] as StockHistoryEntry[]),
+    ]);
+    setInventory(items);
+    setStats(s);
+    setHistory(Array.isArray(hist) ? hist : []);
+  };
+
   useEffect(() => {
     let mounted = true;
     const load = async () => {
       setLoading(true);
       try {
-        const [items, s] = await Promise.all([
+        const [items, s, hist] = await Promise.all([
           sellerInventoryService.getInventory(sellerId),
           sellerInventoryService.getInventoryStats(sellerId),
+          sellerInventoryService.getStockHistory(sellerId).catch(() => [] as StockHistoryEntry[]),
         ]);
         if (mounted) {
           setInventory(items);
           setStats(s);
+          setHistory(Array.isArray(hist) ? hist : []);
         }
       } catch {
         error("Failed to load inventory");
       } finally {
         if (mounted) setLoading(false);
-    }
+      }
     };
     load();
     return () => {
       mounted = false;
     };
-  }, [sellerId, toast]);
+  }, [sellerId, error]);
 
   const filteredInventory = inventory.filter((item) => {
     const matchesSearch =
@@ -77,24 +85,25 @@ export default function SellerInventoryPage() {
     return matchesSearch && matchesStock;
   });
 
-  const handleUpdateStock = async (itemId: string, productId: string) => {
-    const stock = parseInt(editStock);
+  const handleUpdateStock = async (item: InventoryItem) => {
+    const stock = parseInt(editStock, 10);
     if (isNaN(stock) || stock < 0) {
       error("Enter a valid stock quantity");
       return;
     }
     try {
-      await sellerInventoryService.updateStock(sellerId, productId, stock);
+      await sellerInventoryService.updateStock(
+        sellerId,
+        item.productId,
+        stock,
+        { variantId: (item as any).variantId, sku: item.sku }
+      );
       setEditingId(null);
       setEditStock("");
       success("Stock updated");
-      // Refresh
-      const items = await sellerInventoryService.getInventory(sellerId);
-      const s = await sellerInventoryService.getInventoryStats(sellerId);
-      setInventory(items);
-      setStats(s);
-    } catch {
-      error("Failed to update stock");
+      await loadAll();
+    } catch (e: any) {
+      error(e?.message || "Failed to update stock");
     }
   };
 
@@ -103,15 +112,12 @@ export default function SellerInventoryPage() {
     try {
       await sellerInventoryService.bulkUpdateStock(
         sellerId,
-        filteredInventory.map((i) => ({ productId: i.productId, stock: i.stock + 10 }))
+        filteredInventory.map((i: any) => ({ productId: i.productId, stock: i.stock + 10, variantId: i.variantId, sku: i.sku }))
       );
       success("Bulk stock updated");
-      const items = await sellerInventoryService.getInventory(sellerId);
-      const s = await sellerInventoryService.getInventoryStats(sellerId);
-      setInventory(items);
-      setStats(s);
-    } catch {
-      error("Bulk update failed");
+      await loadAll();
+    } catch (e: any) {
+      error(e?.message || "Bulk update failed");
     }
   };
 
@@ -259,7 +265,7 @@ export default function SellerInventoryPage() {
                             onChange={(e) => setEditStock(e.target.value)}
                             className="h-8 w-16 text-xs border border-[#E0E0E0] rounded-sm px-2"
                           />
-                          <Button variant="primary" size="sm" onClick={() => handleUpdateStock(item.id, item.productId)}>
+                          <Button variant="primary" size="sm" onClick={() => handleUpdateStock(item)}>
                             Save
                           </Button>
                           <Button variant="outline" size="sm" onClick={() => setEditingId(null)}>
@@ -294,57 +300,38 @@ export default function SellerInventoryPage() {
             <Clock size={16} className="text-[#2874F0]" />
             Recent Stock History
           </h3>
-          <Button variant="outline" size="sm" onClick={() => router.push("/seller/inventory/history")}>
-            View All History
-          </Button>
         </div>
         <div className="h-64 overflow-y-auto">
           {loading ? (
             <div className="h-24 rounded-sm bg-[#E8E8E8] animate-skeleton w-1/2" />
+          ) : history.length === 0 ? (
+            <div className="h-full flex items-center justify-center text-sm text-[#878787]">
+              No stock history available yet.
+            </div>
           ) : (
             <div className="space-y-3">
-              {[
-                {
-                  productName: "Samsung Galaxy S24 5G 256GB",
-                  type: "OUT",
-                  quantity: 5,
-                  reason: "Order ORD26100101",
-                  date: "2026-10-22",
-                },
-                {
-                  productName: "OnePlus 12 5G 12GB RAM",
-                  type: "IN",
-                  quantity: 20,
-                  reason: "Restock",
-                  date: "2026-10-20",
-                },
-                {
-                  productName: "boAt Rockerz 550 Headphones",
-                  type: "OUT",
-                  quantity: 10,
-                  reason: "Order ORD26100103",
-                  date: "2026-10-21",
-                },
-              ].map((h) => (
-                <div key={h.date + h.productName} className="flex items-center justify-between py-2 border-b border-[#F0F0F0] last:border-0">
-                  <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold">
+              {history.slice(0, 20).map((h) => (
+                <div key={h.id} className="flex items-center justify-between py-2 border-b border-[#F0F0F0] last:border-0 gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0">
                       {h.type === "IN" ? (
-                        <span className="bg-[#E8F5E9] text-[#2E7D32]">+</span>
+                        <span className="bg-[#E8F5E9] text-[#2E7D32] w-full h-full flex items-center justify-center rounded-full">+</span>
+                      ) : h.type === "OUT" ? (
+                        <span className="bg-[#FFEBEE] text-[#C62828] w-full h-full flex items-center justify-center rounded-full">-</span>
                       ) : (
-                        <span className="bg-[#FFEBEE] text-[#C62828]">-</span>
+                        <span className="bg-[#E3F2FD] text-[#1565C0] w-full h-full flex items-center justify-center rounded-full">~</span>
                       )}
                     </div>
-                    <div>
-                      <div className="text-sm text-[#212121]">{h.productName}</div>
-                      <div className="text-[10px] text-[#878787]">{h.reason}</div>
+                    <div className="min-w-0">
+                      <div className="text-sm text-[#212121] truncate">{h.productName}</div>
+                      <div className="text-[10px] text-[#878787] truncate">{h.reason || (h.type === "IN" ? "Stock added" : h.type === "OUT" ? "Stock reduced" : "Stock adjusted")}</div>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className={cn("font-medium", h.type === "IN" ? "text-[#2E7D32]" : "text-[#C62828]")}>
-                      {h.type === "IN" ? "+" : "-"}{h.quantity}
+                  <div className="text-right shrink-0">
+                    <div className={cn("font-medium", h.type === "IN" ? "text-[#2E7D32]" : h.type === "OUT" ? "text-[#C62828]" : "text-[#1565C0]")}>
+                      {h.type === "IN" ? "+" : h.type === "OUT" ? "-" : "±"}{Math.abs(Number(h.quantity || 0))}
                     </div>
-                    <div className="text-[10px] text-[#878787]">{h.date}</div>
+                    <div className="text-[10px] text-[#878787]">{h.createdAt ? new Date(h.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : ""}</div>
                   </div>
                 </div>
               ))}

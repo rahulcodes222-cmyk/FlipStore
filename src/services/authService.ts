@@ -313,7 +313,11 @@ export async function getAddresses(): Promise<Address[]> {
   }
 
   const data = await res.json();
-  return data.data || [];
+  const list = Array.isArray(data.data) ? data.data : [];
+  return list.map((a: any) => ({
+    ...a,
+    id: String(a?.id || a?._id || ""),
+  }));
 }
 
 /**
@@ -335,7 +339,8 @@ export async function addAddress(
   }
 
   const data = await res.json();
-  return data.data;
+  const a = data.data || {};
+  return { ...a, id: String(a?.id || a?._id || "") };
 }
 
 /**
@@ -358,7 +363,8 @@ export async function editAddress(
   }
 
   const data = await res.json();
-  return data.data;
+  const a = data.data || {};
+  return { ...a, id: String(a?.id || a?._id || "") };
 }
 
 /**
@@ -675,6 +681,32 @@ export async function login(identifier: string): Promise<User> {
 // ─── Export for backward compatibility ───
 
 /**
+ * Login with Google ID token credential.
+ * Calls POST /api/v1/auth/google.
+ */
+export async function loginWithGoogle(credential: string): Promise<{ user: User; token: string }> {
+  const res = await fetch(`${API_BASE}/api/v1/auth/google`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ credential }),
+  });
+
+  const body = (await res.json().catch(() => ({}))) as ApiSuccessResponse<AuthPayload> & ApiErrorResponse;
+  if (!res.ok || body?.success === false) {
+    throw new Error((body as ApiErrorResponse)?.message || "Google login failed. Please try again.");
+  }
+
+  const payload = (body as ApiSuccessResponse<AuthPayload>).data;
+  if (!payload?.user) {
+    throw new Error("Google login failed: invalid server response.");
+  }
+  persistSession(payload.user);
+  if (payload.tokens?.accessToken) setStoredAccessToken(payload.tokens.accessToken);
+  return { user: payload.user, token: payload.tokens?.accessToken || "" };
+}
+
+/**
  * Demo credentials for quick login buttons.
  * These point to pre-seeded backend accounts.
  */
@@ -699,6 +731,7 @@ export const DEMO_CREDENTIALS = [
  */
 export const authService = {
   loginWithPassword,
+  loginWithGoogle,
   register,
   logout,
   refreshAccessToken,

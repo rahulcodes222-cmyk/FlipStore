@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import Link from "next/link";
@@ -28,44 +28,71 @@ import { EMPTY_REGISTER_PAYLOAD } from "@/data";
 import { cn } from "@/lib/utils";
 
 const step1Schema = z.object({
-  fullName: z.string().min(2, "Full name must be at least 2 characters"),
-  email: z.string().email("Invalid email address"),
-  mobile: z.string().min(10, "Enter a valid mobile number"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-  confirmPassword: z.string(),
+  fullName: z.string().trim()
+    .min(2, "Full name must be at least 2 characters")
+    .max(60, "Full name is too long")
+    .regex(/^[A-Za-z][A-Za-z\s.'-]*$/, "Enter a valid full name (letters and spaces only)"),
+  email: z.string().trim().toLowerCase().email("Invalid email address"),
+  mobile: z.string().regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit mobile number"),
+  password: z.string().min(8, "Password must be at least 8 characters").max(128, "Password is too long"),
+  confirmPassword: z.string().min(1, "Please confirm your password"),
 }).refine((d) => d.password === d.confirmPassword, {
   message: "Passwords do not match",
   path: ["confirmPassword"],
 });
 
 const step2Schema = z.object({
-  businessName: z.string().min(2, "Business name required"),
+  businessName: z.string().trim()
+    .min(2, "Business name required")
+    .max(100, "Business name is too long")
+    .regex(/^[A-Za-z0-9][A-Za-z0-9\s&.,'()\/-]*$/, "Enter a valid business name"),
   businessType: z.string().min(1, "Select a business type"),
-  businessDescription: z.string().min(10, "Description must be at least 10 characters"),
-  businessEmail: z.string().email("Invalid business email"),
-  businessPhone: z.string().min(10, "Enter a valid business phone"),
+  businessDescription: z.string().trim().min(10, "Description must be at least 10 characters").max(1000, "Description is too long"),
+  businessEmail: z.string().trim().toLowerCase().email("Invalid business email"),
+  businessPhone: z.string().regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit business phone number"),
 });
 
 const step3Schema = z.object({
-  houseNumber: z.string().min(1, "House number required"),
-  street: z.string().min(1, "Street required"),
-  city: z.string().min(1, "City required"),
-  state: z.string().min(1, "State required"),
-  pincode: z.string().length(6, "Enter a valid 6-digit PIN code"),
-  country: z.string().min(1, "Country required"),
+  houseNumber: z.string().trim()
+    .min(1, "House number required")
+    .max(30, "House number is too long")
+    .regex(/^[A-Za-z0-9\s\/,#().-]+$/, "Enter a valid house/flat number"),
+  street: z.string().trim()
+    .min(2, "Street/locality required")
+    .max(120, "Street is too long")
+    .regex(/^[A-Za-z0-9\s\/,#().'-]+$/, "Enter a valid street/locality"),
+  city: z.string().trim()
+    .min(2, "City required")
+    .max(60, "City name is too long")
+    .regex(/^[A-Za-z][A-Za-z\s.'-]*$/, "Enter a valid city name"),
+  state: z.string().trim()
+    .min(2, "State required")
+    .max(60, "State name is too long")
+    .regex(/^[A-Za-z][A-Za-z\s.'-]*$/, "Enter a valid state name"),
+  pincode: z.string().regex(/^\d{6}$/, "Enter a valid 6-digit PIN code"),
+  country: z.string().trim().min(1, "Country required"),
 });
 
 const step4Schema = z.object({
-  panNumber: z.string().min(1, "PAN number required"),
-  gstNumber: z.string().min(1, "GST number required"),
-  businessRegistration: z.string().min(1, "Business registration required"),
+  panNumber: z.string().trim().toUpperCase().regex(/^[A-Z]{5}[0-9]{4}[A-Z]{1}$/, "Enter a valid PAN number (e.g. ABCDE1234F)"),
+  gstNumber: z.string().trim().toUpperCase().regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/, "Enter a valid GSTIN (15 characters)"),
+  businessRegistration: z.string().trim()
+    .min(5, "Business registration details required")
+    .max(30, "Registration details are too long")
+    .regex(/^[A-Za-z0-9\s\/-]+$/, "Enter valid business registration details (letters, numbers, - or /)"),
 });
 
 const step5Schema = z.object({
-  accountHolderName: z.string().min(2, "Account holder name required"),
-  bankName: z.string().min(1, "Bank name required"),
-  accountNumber: z.string().min(9, "Enter a valid account number"),
-  ifscCode: z.string().min(1, "IFSC code required"),
+  accountHolderName: z.string().trim()
+    .min(2, "Account holder name required")
+    .max(60, "Name is too long")
+    .regex(/^[A-Za-z][A-Za-z\s.'-]*$/, "Enter a valid account holder name"),
+  bankName: z.string().trim()
+    .min(2, "Bank name required")
+    .max(80, "Bank name is too long")
+    .regex(/^[A-Za-z][A-Za-z0-9\s&.,'()-]*$/, "Enter a valid bank name"),
+  accountNumber: z.string().regex(/^\d{9,18}$/, "Enter a valid bank account number (9-18 digits)"),
+  ifscCode: z.string().trim().toUpperCase().regex(/^[A-Z]{4}0[A-Z0-9]{6}$/, "Enter a valid IFSC code (e.g. HDFC0001234)"),
 });
 
 type Step1 = z.infer<typeof step1Schema>;
@@ -113,6 +140,12 @@ export default function SellerRegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // validate all steps before submit
+    const ok = (await form1.trigger()) && (await form2.trigger()) && (await form3.trigger()) && (await form4.trigger()) && (await form5.trigger());
+    if (!ok) {
+      setError("Please fix validation errors in previous steps before submitting.");
+      return;
+    }
     setSubmitting(true);
     setError("");
     try {
@@ -193,9 +226,7 @@ export default function SellerRegisterPage() {
               {currentStep === 2 && <Step3Form form={form3} />}
               {currentStep === 3 && <Step4Form form={form4} onImageChange={setIdentityPreview} preview={identityPreview} />}
               {currentStep === 4 && <Step5Form form={form5} />}
-              {currentStep === 5 && <Step6Form
-                form1={form1} form2={form2} form3={form3} form4={form4} form5={form5}
-              />}
+              {currentStep === 5 && <Step6Form form1={form1} form2={form2} form3={form3} form4={form4} form5={form5} />}
             </div>
             <div className="border-t border-[#F0F0F0] p-4 bg-[#F9FAFB] flex items-center justify-between">
               {currentStep > 0 && (
@@ -231,32 +262,54 @@ export default function SellerRegisterPage() {
 }
 
 function Step1Form({ form }: { form: ReturnType<typeof useForm<Step1>> }) {
-  const { register, control, formState: { errors } } = form;
+  const { register, setValue, formState: { errors } } = form;
   return (
     <div className="p-8 space-y-5">
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Full Name</label>
-        <Input {...register("fullName")} placeholder="Rahul Sharma" />
+        <Input
+          {...register("fullName")}
+          placeholder="Rahul Sharma"
+          maxLength={60}
+          onChange={(e) => setValue("fullName", e.target.value.replace(/[^A-Za-z\s.'-]/g, ""), { shouldValidate: true, shouldDirty: true })}
+        />
         {errors.fullName && <p className="text-[10px] text-[#E53935]">{errors.fullName.message}</p>}
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Email</label>
-        <Input {...register("email")} type="email" placeholder="rahul@store.com" />
+        <Input
+          {...register("email")}
+          type="email"
+          inputMode="email"
+          autoComplete="email"
+          placeholder="rahul@store.com"
+          maxLength={100}
+          onChange={(e) => setValue("email", e.target.value.replace(/\s/g, ""), { shouldValidate: true, shouldDirty: true })}
+        />
         {errors.email && <p className="text-[10px] text-[#E53935]">{errors.email.message}</p>}
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Mobile Number</label>
-        <Input {...register("mobile")} placeholder="+91 98765 43210" />
+        <Input
+          {...register("mobile")}
+          type="tel"
+          inputMode="numeric"
+          autoComplete="tel"
+          placeholder="9876543210"
+          maxLength={10}
+          onChange={(e) => setValue("mobile", e.target.value.replace(/\D/g, "").slice(0, 10), { shouldValidate: true, shouldDirty: true })}
+        />
+        <p className="text-[10px] text-[#878787]">Enter 10-digit mobile number (digits only).</p>
         {errors.mobile && <p className="text-[10px] text-[#E53935]">{errors.mobile.message}</p>}
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Password</label>
-        <Input {...register("password")} type="password" placeholder="••••••••" />
+        <Input {...register("password")} type="password" autoComplete="new-password" placeholder="••••••••" maxLength={128} />
         {errors.password && <p className="text-[10px] text-[#E53935]">{errors.password.message}</p>}
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Confirm Password</label>
-        <Input {...register("confirmPassword")} type="password" placeholder="••••••••" />
+        <Input {...register("confirmPassword")} type="password" autoComplete="new-password" placeholder="••••••••" maxLength={128} />
         {errors.confirmPassword && <p className="text-[10px] text-[#E53935]">{errors.confirmPassword.message}</p>}
       </div>
     </div>
@@ -264,13 +317,18 @@ function Step1Form({ form }: { form: ReturnType<typeof useForm<Step1>> }) {
 }
 
 function Step2Form({ form }: { form: ReturnType<typeof useForm<Step2>> }) {
-  const { register, formState: { errors } } = form;
+  const { register, setValue, formState: { errors } } = form;
   const businessTypes = ["Proprietorship", "Partnership", "Private Limited", "LLP", "Public Limited"];
   return (
     <div className="p-8 space-y-5">
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Business Name</label>
-        <Input {...register("businessName")} placeholder="ElectroHub India" />
+        <Input
+          {...register("businessName")}
+          placeholder="ElectroHub India"
+          maxLength={100}
+          onChange={(e) => setValue("businessName", e.target.value.replace(/[^A-Za-z0-9\s&.,'()\/-]/g, ""), { shouldValidate: true, shouldDirty: true })}
+        />
         {errors.businessName && <p className="text-[10px] text-[#E53935]">{errors.businessName.message}</p>}
       </div>
       <div className="space-y-1.5">
@@ -288,6 +346,7 @@ function Step2Form({ form }: { form: ReturnType<typeof useForm<Step2>> }) {
         <textarea
           {...register("businessDescription")}
           rows={3}
+          maxLength={1000}
           className="flex h-24 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]"
           placeholder="Describe your business..."
         />
@@ -295,12 +354,27 @@ function Step2Form({ form }: { form: ReturnType<typeof useForm<Step2>> }) {
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Business Email</label>
-        <Input {...register("businessEmail")} type="email" placeholder="contact@store.com" />
+        <Input
+          {...register("businessEmail")}
+          type="email"
+          inputMode="email"
+          placeholder="contact@store.com"
+          maxLength={100}
+          onChange={(e) => setValue("businessEmail", e.target.value.replace(/\s/g, ""), { shouldValidate: true, shouldDirty: true })}
+        />
         {errors.businessEmail && <p className="text-[10px] text-[#E53935]">{errors.businessEmail.message}</p>}
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Business Phone</label>
-        <Input {...register("businessPhone")} placeholder="+91 98765 43210" />
+        <Input
+          {...register("businessPhone")}
+          type="tel"
+          inputMode="numeric"
+          placeholder="9876543210"
+          maxLength={10}
+          onChange={(e) => setValue("businessPhone", e.target.value.replace(/\D/g, "").slice(0, 10), { shouldValidate: true, shouldDirty: true })}
+        />
+        <p className="text-[10px] text-[#878787]">Enter 10-digit phone number (digits only).</p>
         {errors.businessPhone && <p className="text-[10px] text-[#E53935]">{errors.businessPhone.message}</p>}
       </div>
     </div>
@@ -308,37 +382,65 @@ function Step2Form({ form }: { form: ReturnType<typeof useForm<Step2>> }) {
 }
 
 function Step3Form({ form }: { form: ReturnType<typeof useForm<Step3>> }) {
-  const { register, formState: { errors } } = form;
+  const { register, setValue, formState: { errors } } = form;
   return (
     <div className="p-8 space-y-5">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">House Number</label>
-          <Input {...register("houseNumber")} placeholder="402" />
+          <Input
+            {...register("houseNumber")}
+            placeholder="402"
+            maxLength={30}
+            onChange={(e) => setValue("houseNumber", e.target.value.replace(/[^A-Za-z0-9\s\/,#().-]/g, ""), { shouldValidate: true, shouldDirty: true })}
+          />
           {errors.houseNumber && <p className="text-[10px] text-[#E53935]">{errors.houseNumber.message}</p>}
         </div>
         <div className="space-y-1.5">
           <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Street</label>
-          <Input {...register("street")} placeholder="17th Main Road" />
+          <Input
+            {...register("street")}
+            placeholder="17th Main Road"
+            maxLength={120}
+            onChange={(e) => setValue("street", e.target.value.replace(/[^A-Za-z0-9\s\/,#().'-]/g, ""), { shouldValidate: true, shouldDirty: true })}
+          />
           {errors.street && <p className="text-[10px] text-[#E53935]">{errors.street.message}</p>}
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">City</label>
-          <Input {...register("city")} placeholder="Bengaluru" />
+          <Input
+            {...register("city")}
+            placeholder="Bengaluru"
+            maxLength={60}
+            onChange={(e) => setValue("city", e.target.value.replace(/[^A-Za-z\s.'-]/g, ""), { shouldValidate: true, shouldDirty: true })}
+          />
           {errors.city && <p className="text-[10px] text-[#E53935]">{errors.city.message}</p>}
         </div>
         <div className="space-y-1.5">
           <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">State</label>
-          <Input {...register("state")} placeholder="Karnataka" />
+          <Input
+            {...register("state")}
+            placeholder="Karnataka"
+            maxLength={60}
+            onChange={(e) => setValue("state", e.target.value.replace(/[^A-Za-z\s.'-]/g, ""), { shouldValidate: true, shouldDirty: true })}
+          />
           {errors.state && <p className="text-[10px] text-[#E53935]">{errors.state.message}</p>}
         </div>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-1.5">
           <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">PIN Code</label>
-          <Input {...register("pincode")} placeholder="560034" maxLength={6} />
+          <Input
+            {...register("pincode")}
+            type="tel"
+            inputMode="numeric"
+            placeholder="560034"
+            maxLength={6}
+            onChange={(e) => setValue("pincode", e.target.value.replace(/\D/g, "").slice(0, 6), { shouldValidate: true, shouldDirty: true })}
+          />
+          <p className="text-[10px] text-[#878787]">6-digit PIN code (digits only).</p>
           {errors.pincode && <p className="text-[10px] text-[#E53935]">{errors.pincode.message}</p>}
         </div>
         <div className="space-y-1.5">
@@ -351,22 +453,37 @@ function Step3Form({ form }: { form: ReturnType<typeof useForm<Step3>> }) {
 }
 
 function Step4Form({ form, onImageChange, preview }: { form: ReturnType<typeof useForm<Step4>>; onImageChange: (v: string | null) => void; preview: string | null }) {
-  const { register, formState: { errors } } = form;
+  const { register, setValue, formState: { errors } } = form;
   return (
     <div className="p-8 space-y-5">
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">PAN Card Number</label>
-        <Input {...register("panNumber")} placeholder="ABCDE1234F" />
+        <Input
+          {...register("panNumber")}
+          placeholder="ABCDE1234F"
+          maxLength={10}
+          onChange={(e) => setValue("panNumber", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 10), { shouldValidate: true, shouldDirty: true })}
+        />
         {errors.panNumber && <p className="text-[10px] text-[#E53935]">{errors.panNumber.message}</p>}
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">GST Number</label>
-        <Input {...register("gstNumber")} placeholder="29ABCDE1234F1Z5" />
+        <Input
+          {...register("gstNumber")}
+          placeholder="29ABCDE1234F1Z5"
+          maxLength={15}
+          onChange={(e) => setValue("gstNumber", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 15), { shouldValidate: true, shouldDirty: true })}
+        />
         {errors.gstNumber && <p className="text-[10px] text-[#E53935]">{errors.gstNumber.message}</p>}
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Business Registration Details</label>
-        <Input {...register("businessRegistration")} placeholder="CIN U52100KA2020PTC123456" />
+        <Input
+          {...register("businessRegistration")}
+          placeholder="CIN U52100KA2020PTC123456"
+          maxLength={30}
+          onChange={(e) => setValue("businessRegistration", e.target.value.toUpperCase().replace(/[^A-Z0-9\s\/-]/g, "").slice(0, 30), { shouldValidate: true, shouldDirty: true })}
+        />
         {errors.businessRegistration && <p className="text-[10px] text-[#E53935]">{errors.businessRegistration.message}</p>}
       </div>
       <div className="space-y-1.5">
@@ -406,27 +523,50 @@ function Step4Form({ form, onImageChange, preview }: { form: ReturnType<typeof u
 }
 
 function Step5Form({ form }: { form: ReturnType<typeof useForm<Step5>> }) {
-  const { register, formState: { errors } } = form;
+  const { register, setValue, formState: { errors } } = form;
   return (
     <div className="p-8 space-y-5">
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Account Holder Name</label>
-        <Input {...register("accountHolderName")} placeholder="Rahul Sharma" />
+        <Input
+          {...register("accountHolderName")}
+          placeholder="Rahul Sharma"
+          maxLength={60}
+          onChange={(e) => setValue("accountHolderName", e.target.value.replace(/[^A-Za-z\s.'-]/g, ""), { shouldValidate: true, shouldDirty: true })}
+        />
         {errors.accountHolderName && <p className="text-[10px] text-[#E53935]">{errors.accountHolderName.message}</p>}
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Bank Name</label>
-        <Input {...register("bankName")} placeholder="HDFC Bank" />
+        <Input
+          {...register("bankName")}
+          placeholder="HDFC Bank"
+          maxLength={80}
+          onChange={(e) => setValue("bankName", e.target.value.replace(/[^A-Za-z0-9\s&.,'()-]/g, ""), { shouldValidate: true, shouldDirty: true })}
+        />
         {errors.bankName && <p className="text-[10px] text-[#E53935]">{errors.bankName.message}</p>}
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Account Number</label>
-        <Input {...register("accountNumber")} placeholder="50100123456789" />
+        <Input
+          {...register("accountNumber")}
+          type="tel"
+          inputMode="numeric"
+          placeholder="50100123456789"
+          maxLength={18}
+          onChange={(e) => setValue("accountNumber", e.target.value.replace(/\D/g, "").slice(0, 18), { shouldValidate: true, shouldDirty: true })}
+        />
+        <p className="text-[10px] text-[#878787]">Digits only (9-18 digits).</p>
         {errors.accountNumber && <p className="text-[10px] text-[#E53935]">{errors.accountNumber.message}</p>}
       </div>
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">IFSC Code</label>
-        <Input {...register("ifscCode")} placeholder="HDFC0001234" />
+        <Input
+          {...register("ifscCode")}
+          placeholder="HDFC0001234"
+          maxLength={11}
+          onChange={(e) => setValue("ifscCode", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 11), { shouldValidate: true, shouldDirty: true })}
+        />
         {errors.ifscCode && <p className="text-[10px] text-[#E53935]">{errors.ifscCode.message}</p>}
       </div>
       <p className="text-xs text-[#878787] text-center">

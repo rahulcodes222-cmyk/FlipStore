@@ -2,6 +2,8 @@ import React from "react";
 import type { Metadata } from "next";
 import { OrderDetailsClient } from "./OrderDetailsClient";
 
+export const instant = false;
+
 interface OrderPageProps {
   params: Promise<{ id: string }>;
 }

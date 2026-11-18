@@ -70,6 +70,16 @@ const shipmentSchema = new Schema<IShipmentDocument>(
       type: Date,
     },
     statusHistory: { type: [statusHistorySchema], default: [] },
+    // Shiprocket integration (optional, additive)
+    shiprocketOrderId: { type: String, trim: true },
+    shiprocketShipmentId: { type: String, trim: true },
+    awbCode: { type: String, trim: true },
+    courierName: { type: String, trim: true },
+    labelUrl: { type: String, trim: true },
+    manifestUrl: { type: String, trim: true },
+    pickupScheduledAt: { type: Date },
+    lastShiprocketSyncAt: { type: Date },
+    shiprocketMeta: { type: Schema.Types.Mixed },
   },
   {
     timestamps: true,

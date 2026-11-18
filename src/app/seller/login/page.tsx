@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -17,17 +17,33 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useSellerStore } from "@/store/useSellerStore";
 import { sellerAuthService } from "@/services";
+import { useHydration } from "@/hooks/useHydration";
 import { cn } from "@/lib/utils";
 
 export default function SellerLoginPage() {
   const router = useRouter();
-  const { setSeller } = useSellerStore();
+  const { setSeller, isAuthenticated } = useSellerStore();
+  const isHydrated = useHydration();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    if (isHydrated && isAuthenticated) {
+      router.replace("/seller/dashboard");
+    }
+  }, [isHydrated, isAuthenticated, router]);
+
+  if (isHydrated && isAuthenticated) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#F1F3F6] px-4">
+        <div className="w-6 h-6 border-2 border-[#2874F0] border-t-transparent rounded-full animate-spin" aria-label="Redirecting" />
+      </div>
+    );
+  }
 
   const DEMO_ACCOUNTS = [
     { name: "Rahul Sharma — ElectroHub India", email: "rahul.sharma@electrohub.in" },

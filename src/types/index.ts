@@ -205,6 +205,7 @@ export interface Review {
   id: string;
   productId: string;
   productName?: string;
+  orderId?: string;
   userId: string;
   userName: string;
   userLocation: string;

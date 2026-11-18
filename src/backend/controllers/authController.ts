@@ -11,6 +11,7 @@ import {
   registerUser,
   registerVendor,
   loginUser,
+  loginWithGoogle,
   logoutUser,
   refreshToken,
   getCurrentUser,
@@ -347,6 +348,110 @@ export const logoutPOST = withDatabase(async (req: NextRequest) => {
       createErrorResponse('Logout failed.', {
         statusCode: HTTP_STATUS.INTERNAL_SERVER_ERROR,
         code: 'LOGOUT_FAILED',
+      }),
+      { status: HTTP_STATUS.INTERNAL_SERVER_ERROR },
+    );
+  }
+});
+
+/**
+ * POST /api/v1/auth/google
+ * Authenticate user with Google ID token credential.
+ */
+export const googleLoginPOST = withDatabase(async (req: NextRequest) => {
+  try {
+    const body = await req.json().catch(() => ({}));
+    const credential = String((body as any)?.credential || '').trim();
+    if (!credential) {
+      return NextResponse.json(
+        createErrorResponse('Google credential is required.', {
+          statusCode: HTTP_STATUS.BAD_REQUEST,
+          code: 'GOOGLE_CREDENTIAL_REQUIRED',
+        }),
+        { status: HTTP_STATUS.BAD_REQUEST },
+      );
+    }
+
+    const { user, tokens } = await loginWithGoogle(credential);
+
+    const response = NextResponse.json(
+      createSuccessResponse(
+        {
+          user: {
+            id: user._id.toString(),
+            name: user.name,
+            email: user.email,
+            phone: user.phone,
+            role: user.role,
+            avatar: user.avatar,
+            vendorApplicationStatus: (user as any).vendorApplicationStatus,
+            isVendorApproved: (user as any).isVendorApproved,
+          },
+          tokens,
+        },
+        {
+          message: 'Login successful.',
+          statusCode: HTTP_STATUS.OK,
+        },
+      ),
+      { status: HTTP_STATUS.OK },
+    );
+
+    response.cookies.set('access_token', tokens.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 15 * 60,
+      path: '/',
+    });
+    response.cookies.set('refresh_token', tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 60 * 60,
+      path: '/',
+    });
+
+    return response;
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      const msg = error.message;
+      if (
+        msg.includes('pending approval') ||
+        msg.includes('rejected') ||
+        msg.includes('suspended') ||
+        msg.includes('not available until approved')
+      ) {
+        const isPending = msg.includes('pending approval') || msg.includes('not available until approved');
+        return NextResponse.json(
+          createErrorResponse(msg, {
+            statusCode: isPending ? HTTP_STATUS.FORBIDDEN : HTTP_STATUS.UNAUTHORIZED,
+            code: isPending ? 'VENDOR_NOT_APPROVED' : 'INVALID_CREDENTIALS',
+          }),
+          { status: isPending ? HTTP_STATUS.FORBIDDEN : HTTP_STATUS.UNAUTHORIZED },
+        );
+      }
+      if (
+        msg.includes('Invalid Google') ||
+        msg.includes('required') ||
+        msg.includes('not configured') ||
+        msg.includes('audience') ||
+        msg.includes('not verified') ||
+        msg.includes('deactivated')
+      ) {
+        return NextResponse.json(
+          createErrorResponse(msg, {
+            statusCode: HTTP_STATUS.UNAUTHORIZED,
+            code: msg.includes('deactivated') ? 'INVALID_CREDENTIALS' : 'GOOGLE_AUTH_FAILED',
+          }),
+          { status: HTTP_STATUS.UNAUTHORIZED },
+        );
+      }
+    }
+    return NextResponse.json(
+      createErrorResponse('Google login failed.', {
+        statusCode: HTTP_STATUS.INTERNAL_SERVER_ERROR,
+        code: 'GOOGLE_LOGIN_FAILED',
       }),
       { status: HTTP_STATUS.INTERNAL_SERVER_ERROR },
     );

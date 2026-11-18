@@ -1,29 +1,101 @@
-"use client";
+﻿"use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, HelpCircle, Ticket, MessageCircle, Clock, CheckCircle2 } from "lucide-react";
+import { Search, HelpCircle, Ticket, MessageCircle, CheckCircle2, RefreshCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { MOCK_FAQS, MOCK_SUPPORT_TICKETS } from "@/data";
+import { MOCK_FAQS } from "@/data";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/common/Toast";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
+type SupportTicketItem = {
+  id: string;
+  subject: string;
+  message: string;
+  status: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED" | string;
+  priority: "LOW" | "MEDIUM" | "HIGH" | string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`${API_BASE}${path}`, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...(init?.headers || {}) },
+    ...init,
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok || json?.success === false) {
+    throw new Error(json?.message || json?.error?.message || `Request failed (${res.status})`);
+  }
+  return (json?.data ?? json) as T;
+}
 
 export default function SellerHelpPage() {
+  const { success, error } = useToast();
   const [search, setSearch] = useState("");
   const [ticketSubject, setTicketSubject] = useState("");
   const [ticketMessage, setTicketMessage] = useState("");
+  const [ticketPriority, setTicketPriority] = useState<"LOW" | "MEDIUM" | "HIGH">("MEDIUM");
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [loadingTickets, setLoadingTickets] = useState(true);
+  const [tickets, setTickets] = useState<SupportTicketItem[]>([]);
 
-  const filteredFaqs = MOCK_FAQS.filter(
-    (f) =>
-      f.question.toLowerCase().includes(search.toLowerCase()) ||
-      f.answer.toLowerCase().includes(search.toLowerCase()) ||
-      f.category.toLowerCase().includes(search.toLowerCase())
-  );
+  const loadTickets = async () => {
+    setLoadingTickets(true);
+    try {
+      const data = await api<any>("/api/v1/vendor/support-tickets");
+      const rows = Array.isArray(data?.tickets) ? data.tickets : Array.isArray(data) ? data : [];
+      setTickets(rows as SupportTicketItem[]);
+    } catch (e: any) {
+      error(e?.message || "Failed to load support tickets");
+      setTickets([]);
+    } finally {
+      setLoadingTickets(false);
+    }
+  };
 
-  const handleContact = (e: React.FormEvent) => {
+  useEffect(() => {
+    void loadTickets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const filteredFaqs = useMemo(() => (MOCK_FAQS || []).filter((f: any) => {
+    const q = search.toLowerCase();
+    return String(f?.question || "").toLowerCase().includes(q) ||
+      String(f?.answer || "").toLowerCase().includes(q) ||
+      String(f?.category || "").toLowerCase().includes(q);
+  }), [search]);
+
+  const handleContact = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    const subject = ticketSubject.trim();
+    const message = ticketMessage.trim();
+    if (subject.length < 3) { error("Subject must be at least 3 characters."); return; }
+    if (message.length < 10) { error("Message must be at least 10 characters."); return; }
+    setSubmitting(true);
+    try {
+      const data = await api<any>("/api/v1/vendor/support-tickets", {
+        method: "POST",
+        body: JSON.stringify({ subject, message, priority: ticketPriority }),
+      });
+      const ticket = data?.ticket as SupportTicketItem | undefined;
+      if (ticket) setTickets((prev) => [ticket, ...prev]);
+      else await loadTickets();
+      setSubmitted(true);
+      setTicketSubject("");
+      setTicketMessage("");
+      setTicketPriority("MEDIUM");
+      success("Support ticket submitted");
+    } catch (e: any) {
+      error(e?.message || "Failed to submit support ticket");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -39,7 +111,6 @@ export default function SellerHelpPage() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Help Center */}
         <div className="lg:col-span-2 space-y-6">
           <div className="rounded-sm border border-[#E0E0E0] bg-white p-4 shadow-sm">
             <div className="relative mb-4">
@@ -47,20 +118,18 @@ export default function SellerHelpPage() {
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search help center…"
+                placeholder="Search help center..."
                 className="pl-10"
               />
             </div>
             <h2 className="text-sm font-bold text-[#212121] mb-3">Frequently Asked Questions</h2>
             <div className="space-y-3">
-              {filteredFaqs.map((faq) => (
+              {filteredFaqs.map((faq: any) => (
                 <div key={faq.id} className="border border-[#E0E0E0] rounded-sm overflow-hidden">
-                  <button
-                    className="w-full flex items-center justify-between px-4 py-3 text-left text-sm font-medium text-[#212121] hover:bg-[#F1F3F6] transition-colors"
-                  >
+                  <div className="w-full flex items-center justify-between px-4 py-3 text-left text-sm font-medium text-[#212121] bg-white">
                     {faq.question}
                     <HelpCircle size={14} className="text-[#878787]" />
-                  </button>
+                  </div>
                   <div className="px-4 py-3 border-t border-[#F0F0F0] text-sm text-[#878787]">
                     {faq.answer}
                     <p className="text-[10px] text-[#B0B0B0] mt-2 uppercase tracking-wider font-medium">
@@ -76,7 +145,6 @@ export default function SellerHelpPage() {
           </div>
         </div>
 
-        {/* Contact & Tickets */}
         <div className="lg:col-span-1 space-y-6">
           <div className="rounded-sm border border-[#E0E0E0] bg-white p-5 shadow-sm">
             <h2 className="text-sm font-bold text-[#212121] mb-4 flex items-center gap-2">
@@ -90,7 +158,7 @@ export default function SellerHelpPage() {
                   <span className="text-sm font-medium text-[#212121]">Ticket submitted</span>
                 </div>
                 <p className="text-xs text-[#878787]">
-                  Our support team will get back to you within 24 hours.
+                  Your message has been sent to admin support. You can track its status below.
                 </p>
                 <Button variant="outline" onClick={() => setSubmitted(false)} className="w-auto">
                   Submit Another
@@ -104,7 +172,20 @@ export default function SellerHelpPage() {
                     value={ticketSubject}
                     onChange={(e) => setTicketSubject(e.target.value)}
                     placeholder="e.g. Payout delay"
+                    required
                   />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Priority</label>
+                  <select
+                    value={ticketPriority}
+                    onChange={(e) => setTicketPriority(e.target.value as "LOW" | "MEDIUM" | "HIGH")}
+                    className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]"
+                  >
+                    <option value="LOW">Low</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HIGH">High</option>
+                  </select>
                 </div>
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Message</label>
@@ -112,29 +193,40 @@ export default function SellerHelpPage() {
                     value={ticketMessage}
                     onChange={(e) => setTicketMessage(e.target.value)}
                     rows={4}
-                    className="flex h-32 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]"
+                    required
+                    className="flex min-h-[96px] w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]"
+                    placeholder="Describe your issue..."
                   />
                 </div>
-                <Button variant="primary" type="submit" className="w-full">
-                  Send Message
+                <Button variant="primary" type="submit" className="w-full" disabled={submitting}>
+                  {submitting ? "Sending..." : "Send Message"}
                 </Button>
               </form>
             )}
           </div>
 
           <div className="rounded-sm border border-[#E0E0E0] bg-white p-5 shadow-sm">
-            <h2 className="text-sm font-bold text-[#212121] mb-4 flex items-center gap-2">
-              <Ticket size={16} className="text-[#2874F0]" />
-              Support Tickets
-            </h2>
-            <div className="space-y-3">
-              {MOCK_SUPPORT_TICKETS.map((t) => (
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-bold text-[#212121] flex items-center gap-2">
+                <Ticket size={16} className="text-[#2874F0]" />
+                Support Tickets
+              </h2>
+              <Button variant="outline" size="sm" onClick={() => void loadTickets()} disabled={loadingTickets}>
+                <RefreshCcw size={14} /> Refresh
+              </Button>
+            </div>
+            <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+              {loadingTickets ? (
+                <div className="h-20 rounded-sm bg-[#E8E8E8] animate-skeleton" />
+              ) : tickets.length === 0 ? (
+                <p className="text-sm text-[#878787] text-center py-4">No support tickets yet.</p>
+              ) : tickets.map((t) => (
                 <div key={t.id} className="border border-[#E0E0E0] rounded-sm p-3">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[10px] font-bold text-[#878787] uppercase">{t.subject}</span>
+                  <div className="flex items-center justify-between mb-1 gap-2">
+                    <span className="text-[11px] font-bold text-[#212121] line-clamp-1" title={t.subject}>{t.subject}</span>
                     <span
                       className={cn(
-                        "text-[10px] font-bold rounded-full px-2 py-0.5 border",
+                        "text-[10px] font-bold rounded-full px-2 py-0.5 border shrink-0",
                         t.status === "RESOLVED"
                           ? "bg-[#E8F5E9] text-[#2E7D32] border-[#C8E6C9]"
                           : t.status === "IN_PROGRESS"
@@ -144,13 +236,13 @@ export default function SellerHelpPage() {
                           : "bg-[#E3F2FD] text-[#1565C0] border-[#BBDEFB]"
                       )}
                     >
-                      {t.status.charAt(0) + t.status.slice(1).toLowerCase()}
+                      {String(t.status || "OPEN").replace(/_/g, " ")}
                     </span>
                   </div>
-                  <p className="text-[10px] text-[#878787] mb-2">{t.message}</p>
-                  <div className="flex justify-between text-[10px] text-[#B0B0B0]">
-                    <span>{t.priority.charAt(0) + t.priority.slice(1).toLowerCase()} priority</span>
-                    <span>{new Date(t.updatedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</span>
+                  <p className="text-[11px] text-[#616161] mb-2 whitespace-pre-wrap break-words">{t.message}</p>
+                  <div className="flex justify-between text-[10px] text-[#9E9E9E]">
+                    <span>{String(t.priority || "MEDIUM").charAt(0) + String(t.priority || "MEDIUM").slice(1).toLowerCase()} priority</span>
+                    <span>{new Date(t.updatedAt || t.createdAt).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
                   </div>
                 </div>
               ))}

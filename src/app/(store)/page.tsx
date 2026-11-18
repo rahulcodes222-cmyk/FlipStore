@@ -18,7 +18,7 @@ import { ProductSectionRow } from "@/components/home/ProductSectionRow";
 import { PromoBanner } from "@/components/home/PromoBanner";
 import { RecentlyViewedSection } from "@/components/home/RecentlyViewedSection";
 import { NewsletterSection } from "@/components/home/NewsletterSection";
-import { CategoryCard } from "@/components/common/CategoryCard";
+import { ShopByCategoryStrip } from "@/components/home/ShopByCategoryStrip";
 
 export const instant = false;
 
@@ -119,12 +119,8 @@ export default async function HomePage() {
             </Link>
           </div>
 
-          {/* Category Cards Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-4 lg:grid-cols-8 gap-2.5 sm:gap-3">
-            {categories.map((cat) => (
-              <CategoryCard key={cat.id} category={cat} variant="card" />
-            ))}
-          </div>
+          {/* Category Cards - auto moving single row */}
+          <ShopByCategoryStrip categories={categories} />
         </section>
 
         {/* SECTION 5: Best Deals (Deal of the Day with Countdown Timer) */}
