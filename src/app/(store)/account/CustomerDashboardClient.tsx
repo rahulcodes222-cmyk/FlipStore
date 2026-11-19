@@ -1153,8 +1153,8 @@ export function CustomerDashboardClient() {
 
       {/* ── ADD / EDIT ADDRESS MODAL ────────────────────────────────────────── */}
       {isAddressModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-sm max-w-lg w-full p-6 shadow-xl space-y-4 border border-[#E0E0E0] animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setIsAddressModalOpen(false)}>
+          <div className="bg-white rounded-sm max-w-lg w-full p-6 shadow-xl space-y-4 border border-[#E0E0E0] animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-[#F0F0F0] pb-3">
               <h3 className="font-bold text-sm text-[#212121]">
                 {editingAddressId ? "Edit Delivery Address" : "Add a New Delivery Address"}

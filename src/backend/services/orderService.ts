@@ -878,13 +878,52 @@ export async function createReturnRequest(requesterId: string, input: { orderId:
   }
   const item = (order.items || []).find((it: any) => String(it.productId) === input.productId);
   if (!item) throw new Error('Product not found in this order.');
-  const qty = Math.max(1, Math.min(Number(input.quantity || 1), Number(item.quantity || 1)));
+  const requestedQty = Math.max(1, Number(input.quantity || 1));
+  if (requestedQty > Number(item.quantity || 1)) {
+    throw new Error(`You can request return/replacement for up to ${Number(item.quantity || 1)} unit(s) of this item.`);
+  }
 
   const subOrder = await SubOrderModel.findOne({ orderId: order._id, sellerId: item.sellerId }).exec();
-  const existing = await ReturnRequestModel.findOne({ orderId: order._id, productId: input.productId, customerId: requesterId, status: { $in: ['PENDING', 'APPROVED', 'PROCESSING'] } }).exec();
-  if (existing) throw new Error('A return/replacement request already exists for this item.');
+  if (input.subOrderId && subOrder && String(subOrder._id) !== String(input.subOrderId) && String(subOrder.subOrderNumber) !== String(input.subOrderId)) {
+    throw new Error('Suborder does not match the selected product.');
+  }
 
+  // Return policy / eligibility: default 7-day window from delivery (safe for existing data), product-level override if available.
+  const product: any = await ProductModel.findById(item.productId).select('name isReturnable returnable returnWindowDays returnPolicyDays returnPolicy').lean().exec();
+  const isReturnable = !(product && (product.isReturnable === false || product.returnable === false));
+  if (!isReturnable) throw new Error('This product is not eligible for return or replacement.');
+  const windowDaysRaw = Number(product?.returnWindowDays ?? product?.returnPolicyDays ?? 7);
+  const returnWindowDays = Number.isFinite(windowDaysRaw) && windowDaysRaw > 0 ? Math.min(365, Math.floor(windowDaysRaw)) : 7;
+  const deliveredAt = order.deliveredAt ? new Date(order.deliveredAt) : (subOrder?.deliveredAt ? new Date(subOrder.deliveredAt) : null);
+  if (deliveredAt && !Number.isNaN(deliveredAt.getTime())) {
+    const deadline = deliveredAt.getTime() + returnWindowDays * 24 * 60 * 60 * 1000;
+    if (Date.now() > deadline) {
+      throw new Error(`Return/replacement window has expired for this item (${returnWindowDays} day${returnWindowDays === 1 ? '' : 's'} from delivery).`);
+    }
+  }
+
+  // Prevent duplicate active requests and over-requesting quantity for the same item.
+  const existingRequests = await ReturnRequestModel.find({ orderId: order._id, productId: input.productId, customerId: requesterId }).lean().exec();
+  const activeStatuses = new Set(['PENDING', 'APPROVED', 'PROCESSING']);
+  const hasActive = (existingRequests || []).some((r: any) => activeStatuses.has(String(r.status || '').toUpperCase()));
+  if (hasActive) throw new Error('A return/replacement request is already in progress for this item.');
+  const consumedQty = (existingRequests || []).reduce((sum: number, r: any) => {
+    const st = String(r.status || '').toUpperCase();
+    if (st === 'REJECTED' || st === 'CANCELLED') return sum;
+    return sum + Math.max(0, Number(r.quantity || 0));
+  }, 0);
+  const remainingQty = Math.max(0, Number(item.quantity || 0) - consumedQty);
+  if (remainingQty <= 0) throw new Error('This item has already been fully requested for return/replacement.');
+  if (requestedQty > remainingQty) {
+    throw new Error(`Only ${remainingQty} unit(s) of this item are eligible for return/replacement.`);
+  }
+
+  const qty = requestedQty;
   const refundAmount = round2(Number(item.price) * qty);
+  const type = (input.type || 'RETURN') === 'REPLACEMENT' ? 'REPLACEMENT' : 'RETURN';
+  const reason = String(input.reason || '').trim();
+  if (reason.length < 3) throw new Error('Please provide a valid reason for return/replacement.');
+
   const rr = await new ReturnRequestModel({
     returnNumber: generateReturnNumber(),
     orderId: order._id,
@@ -894,28 +933,34 @@ export async function createReturnRequest(requesterId: string, input: { orderId:
     customerName: order.customerName,
     customerEmail: order.customerEmail,
     productId: item.productId,
-    productName: item.title,
+    productName: item.title || product?.name || 'Product',
     quantity: qty,
-    type: input.type || 'RETURN',
-    reason: input.reason,
+    type,
+    reason,
     status: 'PENDING',
-    statusHistory: [{ status: 'PENDING', note: input.notes || input.reason, actorRole: 'customer', actorId: requesterId, timestamp: nowDate() }],
+    statusHistory: [{ status: 'PENDING', note: input.notes || reason, actorRole: 'customer', actorId: requesterId, timestamp: nowDate() }],
     requestDate: nowDate(),
-    refundAmount,
-    refundStatus: 'PENDING',
+    refundAmount: type === 'REPLACEMENT' ? 0 : refundAmount,
+    refundStatus: type === 'REPLACEMENT' ? 'NOT_APPLICABLE' : 'PENDING',
     notes: input.notes,
   }).save();
 
   if (String(order.orderStatus) === 'DELIVERED') {
     order.orderStatus = 'RETURN_REQUESTED' as any;
-    pushHistory(order, 'RETURN_REQUESTED', 'customer', requesterId, input.reason);
+    pushHistory(order, 'RETURN_REQUESTED', 'customer', requesterId, reason);
     await order.save();
   }
-  if (subOrder) {
+  if (subOrder && String(subOrder.orderStatus) === 'DELIVERED') {
     subOrder.orderStatus = 'RETURN_REQUESTED' as any;
-    pushHistory(subOrder, 'RETURN_REQUESTED', 'customer', requesterId, input.reason);
+    pushHistory(subOrder, 'RETURN_REQUESTED', 'customer', requesterId, reason);
     await subOrder.save();
   }
+
+  try {
+    const { notifyUser } = await import('@/backend/services/notificationService');
+    await notifyUser({ recipientUserId: String(item.sellerId), recipientRole: 'vendor', type: 'RETURN_REQUEST', category: 'RETURN', title: 'New return/replacement request', message: `${order.orderNumber}: ${item.title || 'Product'} (${type}) requested by customer.`, link: '/seller/returns', metadata: { returnId: String(rr._id), orderId: String(order._id), orderNumber: order.orderNumber, type } });
+  } catch {}
+
   return rr.toObject();
 }
 
@@ -941,8 +986,13 @@ export async function updateReturnRequest(requesterId: string, requesterRole: st
   const next = String(input.status).toUpperCase();
   if (isVendor && !allowedByVendor.has(next)) throw new Error('Vendor not permitted to set this status.');
 
+  const prevStatus = String(rr.status || '').toUpperCase();
+  if (prevStatus === next) return rr.toObject();
+
   rr.status = next;
-  if (typeof input.refundAmount === 'number') rr.refundAmount = input.refundAmount;
+  if (typeof input.refundAmount === 'number' && Number.isFinite(input.refundAmount)) {
+    rr.refundAmount = Math.max(0, round2(Number(input.refundAmount)));
+  }
   if (['COMPLETED', 'REJECTED', 'REFUNDED', 'REPLACED'].includes(next)) rr.resolvedAt = nowDate();
   if (!rr.statusHistory) rr.statusHistory = [];
   rr.statusHistory.push({ status: next, note: input.note, actorRole: requesterRole, actorId: requesterId, timestamp: nowDate() });
@@ -952,34 +1002,90 @@ export async function updateReturnRequest(requesterId: string, requesterRole: st
 
   if (next === 'APPROVED' || next === 'PROCESSING') {
     rr.refundStatus = rr.type === 'REPLACEMENT' ? 'NOT_APPLICABLE' : 'PENDING';
-  }
-  if ((next === 'COMPLETED' || next === 'REFUNDED') && rr.type === 'RETURN') {
-    // restore stock and refund
-    await restoreStock([{ productId: String(rr.productId), quantity: Number(rr.quantity || 1) }]);
-    rr.refundStatus = 'PROCESSED';
-    try { await applyRefundReversalForSubOrder(String((sub as any)?._id || rr.subOrderId || ''), { reason: input.note || 'return_completed' }); } catch {}
-    if (order && (order.paymentStatus === 'PAID' || order.paymentStatus === 'PARTIALLY_REFUNDED')) {
-      try { await refundOrderPayment(String(order._id), { reason: input.note || 'return_completed', actorId: requesterId, idempotencyKey: `return:${String(rr._id)}` }); } catch {}
-      if (order) { (order as any).paymentStatus = 'REFUNDED'; await order.save(); }
-      if (sub) { (sub as any).paymentStatus = 'REFUNDED'; await sub.save(); }
+    if (sub && !['CANCELLED', 'REFUNDED', 'RETURNED'].includes(String(sub.orderStatus))) {
+      (sub as any).orderStatus = 'RETURN_REQUESTED';
+      pushHistory(sub, 'RETURN_REQUESTED', requesterRole, requesterId, input.note || `Return ${next.toLowerCase()}`);
+      await sub.save();
+    }
+    if (order && String(order.orderStatus) === 'DELIVERED') {
+      (order as any).orderStatus = 'RETURN_REQUESTED';
+      pushHistory(order, 'RETURN_REQUESTED', requesterRole, requesterId, input.note || `Return ${next.toLowerCase()}`);
+      await order.save();
     }
   }
+
+  // Complete/refund return flow: restore stock once, reverse vendor ledger once (idempotent), and process payment refund for prepaid orders.
+  if ((next === 'COMPLETED' || next === 'REFUNDED') && rr.type === 'RETURN') {
+    const shouldFinalize = !(rr as any).stockRestored || String(rr.refundStatus || '').toUpperCase() !== 'PROCESSED';
+    if (shouldFinalize) {
+      if (!(rr as any).stockRestored) {
+        await restoreStock([{ productId: String(rr.productId), quantity: Number(rr.quantity || 1) }]);
+        (rr as any).stockRestored = true;
+      }
+      try { await applyRefundReversalForSubOrder(String((sub as any)?._id || rr.subOrderId || ''), { reason: input.note || 'return_completed' }); } catch {}
+      const isPrepaidPaid = order && String(order.paymentMethod || '').toUpperCase() !== 'COD' && (String(order.paymentStatus || '').toUpperCase() === 'PAID' || String(order.paymentStatus || '').toUpperCase() === 'PARTIALLY_REFUNDED');
+      if (isPrepaidPaid && order) {
+        try { await refundOrderPayment(String(order._id), { reason: input.note || 'return_completed', actorId: requesterId, idempotencyKey: `return:${String(rr._id)}` }); } catch {}
+        (order as any).paymentStatus = 'REFUNDED';
+        await order.save();
+        if (sub) { (sub as any).paymentStatus = 'REFUNDED'; await sub.save(); }
+        rr.refundStatus = 'PROCESSED';
+      } else {
+        rr.refundStatus = 'COMPLETED';
+        // COD/manual refund settlement path (no online gateway capture to reverse here)
+      }
+    }
+  }
+
   if (next === 'COMPLETED' || next === 'REFUNDED' || next === 'REPLACED') {
-    if (sub) { (sub as any).orderStatus = next === 'REPLACED' ? 'DELIVERED' : 'RETURNED'; pushHistory(sub, (sub as any).orderStatus, requesterRole, requesterId, input.note); await sub.save(); }
+    if (sub) {
+      (sub as any).orderStatus = next === 'REPLACED' ? 'DELIVERED' : 'RETURNED';
+      pushHistory(sub, (sub as any).orderStatus, requesterRole, requesterId, input.note);
+      await sub.save();
+    }
     if (order) {
       const subs = await SubOrderModel.find({ orderId: order._id }).lean().exec();
-      const agg = aggregateOrderStatus(subs.map((s: any) => String(s.orderStatus)));
+      const hasOtherActiveReturns = await ReturnRequestModel.exists({ orderId: order._id, _id: { $ne: rr._id }, status: { $in: ['PENDING', 'APPROVED', 'PROCESSING'] } });
+      const agg = hasOtherActiveReturns ? 'RETURN_REQUESTED' : aggregateOrderStatus(subs.map((s: any) => String(s.orderStatus)));
       (order as any).orderStatus = agg;
       pushHistory(order, agg, requesterRole, requesterId, input.note);
       await order.save();
     }
   }
+
   if (next === 'REJECTED') {
-    if (sub) { (sub as any).orderStatus = 'DELIVERED'; pushHistory(sub, 'DELIVERED', requesterRole, requesterId, 'Return rejected'); await sub.save(); }
-    if (order) { (order as any).orderStatus = 'DELIVERED'; pushHistory(order, 'DELIVERED', requesterRole, requesterId, 'Return rejected'); await order.save(); }
+    rr.refundStatus = rr.type === 'REPLACEMENT' ? 'NOT_APPLICABLE' : 'REJECTED';
+    const hasOtherActiveReturns = await ReturnRequestModel.exists({ orderId: rr.orderId, _id: { $ne: rr._id }, status: { $in: ['PENDING', 'APPROVED', 'PROCESSING'] } });
+    if (sub) {
+      (sub as any).orderStatus = hasOtherActiveReturns ? 'RETURN_REQUESTED' : 'DELIVERED';
+      pushHistory(sub, (sub as any).orderStatus, requesterRole, requesterId, input.note || 'Return rejected');
+      await sub.save();
+    }
+    if (order) {
+      const subs = await SubOrderModel.find({ orderId: order._id }).lean().exec();
+      const agg = hasOtherActiveReturns ? 'RETURN_REQUESTED' : aggregateOrderStatus(subs.map((s: any) => String(s.orderStatus)));
+      (order as any).orderStatus = agg === 'RETURN_REQUESTED' || hasOtherActiveReturns ? 'RETURN_REQUESTED' : agg;
+      pushHistory(order, (order as any).orderStatus, requesterRole, requesterId, input.note || 'Return rejected');
+      await order.save();
+    }
   }
 
   await rr.save();
+
+  try {
+    const { notifyUser } = await import('@/backend/services/notificationService');
+    await notifyUser({
+      recipientUserId: String(rr.customerId),
+      recipientRole: 'customer',
+      type: next === 'REJECTED' ? 'REFUND_UPDATE' : 'RETURN_REQUEST',
+      category: next === 'REJECTED' ? 'PAYMENT' : 'RETURN',
+      title: `Return request ${next.toLowerCase().replace(/_/g, ' ')}`,
+      message: `Your ${String(rr.type || 'return').toLowerCase()} request ${rr.returnNumber || ''} is now ${next.toLowerCase().replace(/_/g, ' ')}.`,
+      link: order ? `/orders/${(order as any).orderNumber || String((order as any)._id)}` : '/orders',
+      metadata: { returnId: String(rr._id), status: next },
+    });
+  } catch {}
+
   return rr.toObject();
 }
 

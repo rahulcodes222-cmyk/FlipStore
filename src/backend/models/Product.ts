@@ -232,6 +232,22 @@ const productSchema = new Schema<IProductDocument>(
       default: 3,
       min: 0,
     },
+    // Return policy set by the seller; used to validate customer return eligibility.
+    returnPolicy: {
+      type: String,
+      trim: true,
+      maxlength: 2000,
+    },
+    returnWindowDays: {
+      type: Number,
+      default: 7,
+      min: 0,
+      max: 365,
+    },
+    isReturnable: {
+      type: Boolean,
+      default: true,
+    },
   },
   {
     timestamps: true,

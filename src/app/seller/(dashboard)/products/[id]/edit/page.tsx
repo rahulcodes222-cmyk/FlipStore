@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -49,6 +49,9 @@ const productSchema = z.object({
   seoTitle: z.string().optional(),
   seoDescription: z.string().optional(),
   estimatedDeliveryDays: z.coerce.number().int().min(0).max(30).optional(),
+  returnPolicy: z.string().max(2000).optional(),
+  returnWindowDays: z.coerce.number().int().min(0).max(365).optional(),
+  isReturnable: z.boolean().optional(),
 });
 
 type ProductFormValues = z.infer<typeof productSchema>;
@@ -116,6 +119,9 @@ export default function SellerEditProductPage() {
       seoTitle: "",
       seoDescription: "",
       estimatedDeliveryDays: 5,
+      returnPolicy: "",
+      returnWindowDays: 7,
+      isReturnable: true,
     },
   });
 
@@ -169,6 +175,9 @@ export default function SellerEditProductPage() {
             seoTitle: p.seoTitle || "",
             seoDescription: p.seoDescription || "",
             estimatedDeliveryDays: p.estimatedDeliveryDays ?? 5,
+            returnPolicy: (p as any).returnPolicy || "",
+            returnWindowDays: (p as any).returnWindowDays ?? 7,
+            isReturnable: (p as any).isReturnable ?? true,
           });
         }
       } catch (err: any) {
@@ -254,6 +263,9 @@ export default function SellerEditProductPage() {
       seoTitle: values.seoTitle?.trim() || undefined,
       seoDescription: values.seoDescription?.trim() || undefined,
       estimatedDeliveryDays: values.estimatedDeliveryDays ?? 5,
+      returnPolicy: values.returnPolicy || "",
+      returnWindowDays: Number(values.returnWindowDays ?? 7),
+      isReturnable: values.isReturnable ?? true,
       images: productImages,
       variants: productVariants,
       specifications: productSpecs,
@@ -349,8 +361,8 @@ export default function SellerEditProductPage() {
             <section className="space-y-4 border-t border-[#F0F0F0] pt-4">
               <div className="flex items-center gap-2 mb-2"><TagIcon size={18} className="text-[#2874F0]" /><h3 className="text-sm font-bold text-[#212121]">Pricing</h3></div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Selling Price (₹)</label><Input type="number" min={0} {...form.register("price")} />{form.formState.errors.price && <p className="text-[10px] text-[#E53935]">{form.formState.errors.price.message}</p>}</div>
-                <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">MRP (₹)</label><Input type="number" min={0} {...form.register("mrp")} />{form.formState.errors.mrp && <p className="text-[10px] text-[#E53935]">{form.formState.errors.mrp.message}</p>}</div>
+                <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Selling Price (?)</label><Input type="number" min={0} {...form.register("price")} />{form.formState.errors.price && <p className="text-[10px] text-[#E53935]">{form.formState.errors.price.message}</p>}</div>
+                <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">MRP (?)</label><Input type="number" min={0} {...form.register("mrp")} />{form.formState.errors.mrp && <p className="text-[10px] text-[#E53935]">{form.formState.errors.mrp.message}</p>}</div>
                 <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Discount %</label><Input type="number" min={0} max={100} {...form.register("discountPercentage")} /></div>
                 <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Tax %</label><Input type="number" min={0} max={100} {...form.register("taxPercentage")} /></div>
               </div>
@@ -388,8 +400,8 @@ export default function SellerEditProductPage() {
                       <div className="space-y-1.5"><label className="text-[10px] font-bold text-[#878787] uppercase">SKU</label><Input value={v.sku} onChange={(e) => setVariants((prev) => prev.map((x) => x.id === v.id ? { ...x, sku: e.target.value } : x))} /></div>
                       <div className="space-y-1.5"><label className="text-[10px] font-bold text-[#878787] uppercase">Size</label><Input value={v.size} onChange={(e) => setVariants((prev) => prev.map((x) => x.id === v.id ? { ...x, size: e.target.value } : x))} /></div>
                       <div className="space-y-1.5"><label className="text-[10px] font-bold text-[#878787] uppercase">Color</label><Input value={v.color} onChange={(e) => setVariants((prev) => prev.map((x) => x.id === v.id ? { ...x, color: e.target.value } : x))} /></div>
-                      <div className="space-y-1.5"><label className="text-[10px] font-bold text-[#878787] uppercase">Price (₹)</label><Input value={v.price} onChange={(e) => setVariants((prev) => prev.map((x) => x.id === v.id ? { ...x, price: e.target.value } : x))} /></div>
-                      <div className="space-y-1.5"><label className="text-[10px] font-bold text-[#878787] uppercase">MRP (₹)</label><Input value={v.mrp} onChange={(e) => setVariants((prev) => prev.map((x) => x.id === v.id ? { ...x, mrp: e.target.value } : x))} /></div>
+                      <div className="space-y-1.5"><label className="text-[10px] font-bold text-[#878787] uppercase">Price (?)</label><Input value={v.price} onChange={(e) => setVariants((prev) => prev.map((x) => x.id === v.id ? { ...x, price: e.target.value } : x))} /></div>
+                      <div className="space-y-1.5"><label className="text-[10px] font-bold text-[#878787] uppercase">MRP (?)</label><Input value={v.mrp} onChange={(e) => setVariants((prev) => prev.map((x) => x.id === v.id ? { ...x, mrp: e.target.value } : x))} /></div>
                       <div className="space-y-1.5"><label className="text-[10px] font-bold text-[#878787] uppercase">Stock</label><Input value={v.stock} onChange={(e) => setVariants((prev) => prev.map((x) => x.id === v.id ? { ...x, stock: e.target.value } : x))} /></div>
                     </div>
                   </div>

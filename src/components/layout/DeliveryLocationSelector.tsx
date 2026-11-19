@@ -128,13 +128,14 @@ export function DeliveryLocationSelector({ compact = false }: { compact?: boolea
     }
   };
 
-  const detectCurrentLocation = async () => {
+  const detectCurrentLocation = async (opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent;
     if (typeof window === "undefined" || !navigator.geolocation) {
-      setError("Geolocation is not supported in this browser.");
+      if (!silent) setError("Geolocation is not supported in this browser.");
       return;
     }
     setIsDetecting(true);
-    setError(null);
+    if (!silent) setError(null);
     try {
       const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
         navigator.geolocation.getCurrentPosition(resolve, reject, {
@@ -160,22 +161,35 @@ export function DeliveryLocationSelector({ compact = false }: { compact?: boolea
       setLocation(loc);
       if (isAuthenticated && user) {
         await persistLocationAsDeliveryAddress(loc, { silent: true, closeOnSuccess: false });
-      } else {
+      } else if (!silent) {
         toast({ type: "success", title: "Location detected", message: `${detected.pincode}${detected.city ? `, ${detected.city}` : ""}` });
       }
     } catch (e: any) {
-      const msg = e?.code === 1
-        ? "Location permission denied. Please allow location access or enter pincode manually."
-        : e?.code === 2
-          ? "Location unavailable. Please try again or enter pincode manually."
-          : e?.code === 3
-            ? "Location request timed out. Please try again."
-            : (e?.message || "Failed to detect current location.");
-      setError(msg);
+      if (!silent) {
+        const msg = e?.code === 1
+          ? "Location permission denied. Please allow location access or enter pincode manually."
+          : e?.code === 2
+            ? "Location unavailable. Please try again or enter pincode manually."
+            : e?.code === 3
+              ? "Location request timed out. Please try again."
+              : (e?.message || "Failed to detect current location.");
+        setError(msg);
+      }
     } finally {
       setIsDetecting(false);
     }
   };
+
+  const autoDetectAttempted = useRef(false);
+  useEffect(() => {
+    if (!isHydrated || autoDetectAttempted.current) return;
+    if (current?.pincode) {
+      autoDetectAttempted.current = true;
+      return;
+    }
+    autoDetectAttempted.current = true;
+    void detectCurrentLocation({ silent: true });
+  }, [isHydrated, current?.pincode]);
 
   const apply = async () => {
     const pin = pincode.trim();
@@ -242,7 +256,7 @@ export function DeliveryLocationSelector({ compact = false }: { compact?: boolea
             <p className="text-xs text-[#616161]">Enter your pincode or use current location to see product availability and delivery options.</p>
             <button
               type="button"
-              onClick={detectCurrentLocation}
+              onClick={() => void detectCurrentLocation()}
               disabled={isDetecting}
               className={cn(
                 "w-full h-10 rounded-xs text-sm font-semibold border transition-colors flex items-center justify-center gap-2",

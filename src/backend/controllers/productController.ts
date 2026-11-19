@@ -65,7 +65,7 @@ async function validateRequestBody<T>(
 
 /**
  * POST /api/v1/products
- * Create a new product (vendor or admin).
+ * Create a new product (seller/vendor only). Admin cannot add products.
  */
 export const POST = withDatabase(
   withAuth(
@@ -81,8 +81,8 @@ export const POST = withDatabase(
         );
       }
       const role = String(authReq.user.role || '').toLowerCase();
-      if (role !== 'vendor' && role !== 'admin' && role !== 'super_admin') {
-        return NextResponse.json(createErrorResponse('Insufficient permissions.', { statusCode: HTTP_STATUS.FORBIDDEN, code: 'INSUFFICIENT_PERMISSIONS', requestId: authReq.requestId }), { status: HTTP_STATUS.FORBIDDEN });
+      if (role !== 'vendor') {
+        return NextResponse.json(createErrorResponse('Only sellers can add products.', { statusCode: HTTP_STATUS.FORBIDDEN, code: 'INSUFFICIENT_PERMISSIONS', requestId: authReq.requestId }), { status: HTTP_STATUS.FORBIDDEN });
       }
 
       try {
@@ -287,6 +287,9 @@ export const GET = withDatabase(
                 isAssured: product.isAssured,
                 isFreeDelivery: product.isFreeDelivery,
                 estimatedDeliveryDays: product.estimatedDeliveryDays,
+                returnPolicy: (product as any).returnPolicy || '',
+                returnWindowDays: (product as any).returnWindowDays ?? 7,
+                isReturnable: (product as any).isReturnable ?? true,
                 sellerId: product.sellerId.toString(),
                 inStock: product.stock > 0,
                 createdAt: product.createdAt,
@@ -446,8 +449,10 @@ export const productIdGET = withDatabase(
   withOptionalAuth(
     async (authReq) => {
       const url = new URL(authReq.url);
-      const pathSegments = url.pathname.split('/');
-      const productId = pathSegments[pathSegments.length - 2];
+      const pathSegments = url.pathname.split('/').filter(Boolean);
+      const productId = pathSegments[pathSegments.length - 1] === 'publish'
+        ? pathSegments[pathSegments.length - 2]
+        : pathSegments[pathSegments.length - 1];
 
       const paramResult = productIdParamSchema.safeParse({ id: productId });
       if (!paramResult.success) {
@@ -461,7 +466,11 @@ export const productIdGET = withDatabase(
       }
 
       try {
-        const product = await getProductById(productId, undefined, { publicOnly: true });
+        const role = String(authReq.user?.role || '').toLowerCase();
+        const isAdmin = role === 'admin' || role === 'super_admin';
+        const product = isAdmin
+          ? await getProductById(productId)
+          : await getProductById(productId, undefined, { publicOnly: true });
         if (!product) {
           return NextResponse.json(
             createErrorResponse('Product not found.', {
@@ -498,6 +507,10 @@ export const productIdGET = withDatabase(
               stock: product.stock,
               lowStockThreshold: product.lowStockThreshold,
               status: product.status,
+              approvalStatus: (product as any).approvalStatus,
+              productStatus: (product as any).productStatus,
+              rejectionReason: (product as any).rejectionReason || '',
+              adminComment: (product as any).adminComment || '',
               images: product.images.map((img) => ({
                 id: img.id,
                 url: img.url,
@@ -528,6 +541,9 @@ export const productIdGET = withDatabase(
               isAssured: product.isAssured,
               isFreeDelivery: product.isFreeDelivery,
               estimatedDeliveryDays: product.estimatedDeliveryDays,
+              returnPolicy: (product as any).returnPolicy || '',
+              returnWindowDays: (product as any).returnWindowDays ?? 7,
+              isReturnable: (product as any).isReturnable ?? true,
               sellerId: product.sellerId.toString(),
               inStock: product.stock > 0,
               createdAt: product.createdAt,
@@ -571,8 +587,10 @@ export const productUpdateHandler = withDatabase(
       }
 
       const url = new URL(authReq.url);
-      const pathSegments = url.pathname.split('/');
-      const productId = pathSegments[pathSegments.length - 2];
+      const pathSegments = url.pathname.split('/').filter(Boolean);
+      const productId = pathSegments[pathSegments.length - 1] === 'publish'
+        ? pathSegments[pathSegments.length - 2]
+        : pathSegments[pathSegments.length - 1];
 
       const paramResult = productIdParamSchema.safeParse({ id: productId });
       if (!paramResult.success) {
@@ -676,8 +694,10 @@ export const productIdDELETE = withDatabase(
       }
 
       const url = new URL(authReq.url);
-      const pathSegments = url.pathname.split('/');
-      const productId = pathSegments[pathSegments.length - 2];
+      const pathSegments = url.pathname.split('/').filter(Boolean);
+      const productId = pathSegments[pathSegments.length - 1] === 'publish'
+        ? pathSegments[pathSegments.length - 2]
+        : pathSegments[pathSegments.length - 1];
 
       const paramResult = productIdParamSchema.safeParse({ id: productId });
       if (!paramResult.success) {
@@ -744,8 +764,10 @@ export const productIdPublishPATCH = withDatabase(
       }
 
       const url = new URL(authReq.url);
-      const pathSegments = url.pathname.split('/');
-      const productId = pathSegments[pathSegments.length - 3]; // /api/v1/products/:id/publish
+      const pathSegments = url.pathname.split('/').filter(Boolean);
+      const productId = pathSegments[pathSegments.length - 1] === 'publish'
+        ? pathSegments[pathSegments.length - 2]
+        : pathSegments[pathSegments.length - 1];
 
       const paramResult = productIdParamSchema.safeParse({ id: productId });
       if (!paramResult.success) {

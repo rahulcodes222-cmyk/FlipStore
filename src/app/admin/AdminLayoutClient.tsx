@@ -12,7 +12,6 @@ import {
   Ticket,
   Star,
   Settings,
-  Plus,
   ExternalLink,
   Menu,
   X,
@@ -24,6 +23,7 @@ import {
   Store,
   BadgeCheck,
   LifeBuoy,
+  Image as ImageIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/useAuthStore";
@@ -36,6 +36,7 @@ const NAV_ITEMS = [
   { label: "Products", href: "/admin/products", icon: Package },
   { label: "Product Approvals", href: "/admin/product-approvals", icon: BadgeCheck },
   { label: "Categories", href: "/admin/categories", icon: Layers },
+  { label: "Banners", href: "/admin/banners", icon: ImageIcon },
   { label: "Orders", href: "/admin/orders", icon: ShoppingBag },
   { label: "Customers", href: "/admin/customers", icon: Users },
   { label: "Seller Requests", href: "/admin/vendors", icon: Store },
@@ -187,9 +188,6 @@ export function AdminLayoutClient({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-3">
-            <Link href="/admin/products/add">
-              <button type="button" className="bg-[#2874F0] hover:bg-blue-700 text-white text-xs font-bold px-3 py-1.5 rounded-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"><Plus size={14} /><span className="hidden sm:inline">Add Product</span></button>
-            </Link>
             <div className="relative p-1.5 text-gray-600 hover:bg-gray-100 rounded-sm cursor-pointer"><Bell size={17} /><span className="absolute top-1 right-1 w-2 h-2 bg-[#FB641B] rounded-full" /></div>
             <div className="flex items-center gap-2 pl-2 border-l border-gray-200">
               <div className="w-7 h-7 rounded-full bg-[#172337] text-white flex items-center justify-center font-bold text-xs">{String(user?.name || user?.email || "A").charAt(0).toUpperCase()}</div>

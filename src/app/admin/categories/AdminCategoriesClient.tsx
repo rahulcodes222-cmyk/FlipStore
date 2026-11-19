@@ -209,8 +209,8 @@ export function AdminCategoriesClient() {
       )}
 
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-md max-w-md w-full p-5 shadow-2xl relative space-y-4">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => { if (!saving) setIsModalOpen(false); }}>
+          <div className="bg-white rounded-md max-w-md w-full p-5 shadow-2xl relative space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <h2 className="text-base font-bold text-[#212121]">{editingCategory ? "Edit Category" : "Add New Category"}</h2>
               <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button>

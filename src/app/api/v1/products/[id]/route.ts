@@ -87,8 +87,8 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
         }
 
         const url = new URL(authReq.url);
-        const pathSegments = url.pathname.split('/');
-        const productId = pathSegments[pathSegments.length - 2];
+        const pathSegments = url.pathname.split('/').filter(Boolean);
+        const productId = pathSegments[pathSegments.length - 1];
 
         const paramResult = productIdParamSchema.safeParse({ id: productId });
         if (!paramResult.success) {

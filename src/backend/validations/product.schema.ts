@@ -147,6 +147,9 @@ export const createProductSchema = z.object({
   isAssured: isBooleanOptional,
   isFreeDelivery: isBooleanOptional,
   estimatedDeliveryDays: estimatedDeliveryDaysSchema,
+  returnPolicy: z.string().max(2000, 'Return policy must not exceed 2000 characters.').optional(),
+  returnWindowDays: z.number().int().min(0, 'Return window days cannot be negative.').max(365, 'Return window days cannot exceed 365.').optional(),
+  isReturnable: isBooleanOptional,
 });
 
 /**

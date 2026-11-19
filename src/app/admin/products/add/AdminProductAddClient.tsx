@@ -42,6 +42,9 @@ export function AdminProductAddClient() {
   const [stock, setStock] = useState<number>(25);
   const [isAssured, setIsAssured] = useState(true);
   const [freeDelivery, setFreeDelivery] = useState(true);
+  const [returnPolicy, setReturnPolicy] = useState("7-day easy return policy. Items must be unused, in original packaging with all tags intact.");
+  const [returnWindowDays, setReturnWindowDays] = useState(7);
+  const [isReturnable, setIsReturnable] = useState(true);
   const [description, setDescription] = useState("");
   const [highlights, setHighlights] = useState("High durability, Premium finish, 1 Year Manufacturer Warranty");
   const [imagePreview, setImagePreview] = useState<string>(SAMPLE_IMAGES[0]);
@@ -118,6 +121,9 @@ export function AdminProductAddClient() {
         isAssured,
         isFreeDelivery: freeDelivery,
         estimatedDeliveryDays: 2,
+        returnPolicy,
+        returnWindowDays,
+        isReturnable,
         seller: {
           id: "seller-1",
           name: "RetailNet Official",
@@ -391,6 +397,44 @@ export function AdminProductAddClient() {
                   placeholder="Provide detailed description of the product, design, features, and specs..."
                   className="text-xs"
                 />
+              </div>
+            </div>
+
+            {/* Return Policy */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-[#F0F0F0]">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Return Policy
+                </label>
+                <Textarea
+                  rows={3}
+                  value={returnPolicy}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReturnPolicy(e.target.value)}
+                  placeholder="e.g. 7-day return, unused items only, original packaging required"
+                  className="text-xs"
+                />
+              </div>
+              <div className="flex items-end">
+                <label className="block text-xs font-semibold text-gray-700 mb-1 hidden sm:block">
+                  Return Window (days)
+                </label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={365}
+                  value={returnWindowDays}
+                  onChange={(e) => setReturnWindowDays(Number(e.target.value))}
+                  className="h-9 text-xs w-20"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={isReturnable}
+                  onChange={(e) => setIsReturnable(e.target.checked)}
+                  className="w-4 h-4 rounded border-[#E0E0E0] text-[#2874F0] focus:ring-[#2874F0]"
+                />
+                <label className="text-xs text-[#212121]">Allow returns</label>
               </div>
             </div>
 

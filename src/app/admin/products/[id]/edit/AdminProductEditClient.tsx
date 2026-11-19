@@ -35,6 +35,9 @@ export function AdminProductEditClient({ productId }: { productId: string }) {
   const [stock, setStock] = useState<number>(0);
   const [isAssured, setIsAssured] = useState(true);
   const [freeDelivery, setFreeDelivery] = useState(true);
+  const [returnPolicy, setReturnPolicy] = useState("");
+  const [returnWindowDays, setReturnWindowDays] = useState(7);
+  const [isReturnable, setIsReturnable] = useState(true);
   const [description, setDescription] = useState("");
   const [highlights, setHighlights] = useState("");
   const [imagePreview, setImagePreview] = useState<string>("");
@@ -42,28 +45,43 @@ export function AdminProductEditClient({ productId }: { productId: string }) {
   useEffect(() => {
     async function init() {
       setLoading(true);
+      setErrorMsg(null);
       try {
-        const [prod, cats] = await Promise.all([
+        const [prodRes, catsRes] = await Promise.allSettled([
           adminService.getProductById(productId),
           adminService.getCategories(),
         ]);
-        setCategories(cats);
-        if (prod) {
-          setProduct(prod);
-          setTitle(prod.title);
-          setBrandName(prod.brandName);
-          setCategoryId(prod.categoryId);
-          setPrice(prod.price);
-          setOriginalPrice(prod.mrp);
-          setStock(prod.stock);
-          setIsAssured(prod.isAssured);
-          setFreeDelivery(prod.isFreeDelivery);
-          setDescription(prod.description);
-          setHighlights(prod.highlights?.join(", ") || "");
-          setImagePreview(prod.thumbnail || prod.images[0] || "");
-        } else {
-          setErrorMsg("Product not found");
+
+        const cats = catsRes.status === "fulfilled" ? catsRes.value : [];
+        setCategories(Array.isArray(cats) ? cats : []);
+
+        if (prodRes.status !== "fulfilled") {
+          setProduct(null);
+          setErrorMsg(prodRes.reason?.message || "Failed to load product. Please ensure you are logged in as admin and try again.");
+          return;
         }
+        if (!prodRes.value) {
+          setProduct(null);
+          setErrorMsg("Product not found.");
+          return;
+        }
+
+        const prod = prodRes.value;
+        setProduct(prod);
+        setTitle(prod.title || "");
+        setBrandName(prod.brandName || "");
+        setCategoryId(prod.categoryId || "");
+        setPrice(Number(prod.price || 0));
+        setOriginalPrice(Number(prod.mrp || 0));
+        setStock(Number(prod.stock || 0));
+        setIsAssured(prod.isAssured ?? true);
+        setFreeDelivery(prod.isFreeDelivery ?? true);
+        setReturnPolicy(prod.returnPolicy || "");
+        setReturnWindowDays(Number(prod.returnWindowDays ?? 7));
+        setIsReturnable(prod.isReturnable ?? true);
+        setDescription(prod.description || "");
+        setHighlights(Array.isArray(prod.highlights) ? prod.highlights.join(", ") : "");
+        setImagePreview(prod.thumbnail || prod.images?.[0] || "");
       } catch (err) {
         console.error(err);
         setErrorMsg("Failed to load product data");
@@ -104,7 +122,7 @@ export function AdminProductEditClient({ productId }: { productId: string }) {
 
     try {
       const selectedCat = categories.find((c) => c.id === categoryId);
-      const discountPercent = Math.max(0, Math.round(((originalPrice - price) / originalPrice) * 100));
+      const discountPercent = originalPrice > 0 ? Math.max(0, Math.round(((originalPrice - price) / originalPrice) * 100)) : 0;
 
       const highlightList = highlights
         .split(",")
@@ -116,6 +134,7 @@ export function AdminProductEditClient({ productId }: { productId: string }) {
         brandName: brandName.trim(),
         categoryId: selectedCat?.id || categoryId,
         categorySlug: selectedCat?.slug || product?.categorySlug,
+        category: selectedCat?.name || product?.category || undefined,
         price,
         mrp: originalPrice,
         discountPercentage: discountPercent,
@@ -123,6 +142,9 @@ export function AdminProductEditClient({ productId }: { productId: string }) {
         inStock: stock > 0,
         isAssured,
         isFreeDelivery: freeDelivery,
+        returnPolicy,
+        returnWindowDays,
+        isReturnable,
         thumbnail: imagePreview,
         images: [imagePreview, ...(product?.images.slice(1) || [])],
         description: description.trim(),
@@ -304,6 +326,10 @@ export function AdminProductEditClient({ productId }: { productId: string }) {
                     onChange={(e) => setCategoryId(e.target.value)}
                     className="w-full h-9 px-3 text-xs bg-white border border-gray-200 rounded text-gray-800 font-semibold focus:outline-none focus:border-[#2874F0]"
                   >
+                    <option value="">Select category</option>
+                    {categoryId && !categories.some((c) => c.id === categoryId) && (
+                      <option value={categoryId}>{product?.categoryName || "Current category"}</option>
+                    )}
                     {categories.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name}
@@ -381,6 +407,44 @@ export function AdminProductEditClient({ productId }: { productId: string }) {
                   onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
                   className="text-xs"
                 />
+              </div>
+            </div>
+
+            {/* Return Policy */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-[#F0F0F0]">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  Return Policy
+                </label>
+                <Textarea
+                  rows={3}
+                  value={returnPolicy}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReturnPolicy(e.target.value)}
+                  placeholder="e.g. 7-day return, unused items only, original packaging required"
+                  className="text-xs"
+                />
+              </div>
+              <div className="flex items-end">
+                <label className="block text-xs font-semibold text-gray-700 mb-1 hidden sm:block">
+                  Return Window (days)
+                </label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={365}
+                  value={returnWindowDays}
+                  onChange={(e) => setReturnWindowDays(Number(e.target.value))}
+                  className="h-9 text-xs w-20"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={isReturnable}
+                  onChange={(e) => setIsReturnable(e.target.checked)}
+                  className="w-4 h-4 rounded border-[#E0E0E0] text-[#2874F0] focus:ring-[#2874F0]"
+                />
+                <label className="text-xs text-[#212121]">Allow returns</label>
               </div>
             </div>
 

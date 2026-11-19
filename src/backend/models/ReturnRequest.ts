@@ -112,6 +112,7 @@ const returnRequestSchema = new Schema<IReturnRequestDocument>(
       min: 0,
     },
     refundStatus: { type: String, trim: true },
+    stockRestored: { type: Boolean, default: false },
     notes: {
       type: String,
       trim: true,

@@ -5,7 +5,6 @@ import Image from "next/image";
 import Link from "next/link";
 import {
   Package,
-  Plus,
   Search,
   Filter,
   Edit2,
@@ -145,13 +144,6 @@ export function AdminProductsClient() {
             <RefreshCw size={13} className="mr-1.5" />
             Refresh
           </Button>
-
-          <Link href="/admin/products/add">
-            <Button size="sm" className="h-9 text-xs font-bold bg-[#2874F0] hover:bg-[#1259c7] text-white">
-              <Plus size={14} className="mr-1" />
-              Add New Product
-            </Button>
-          </Link>
         </div>
       </div>
 

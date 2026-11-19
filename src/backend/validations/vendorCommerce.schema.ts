@@ -52,6 +52,9 @@ export const vendorCreateProductSchema = z.object({
   seoDescription: z.string().trim().max(500).optional(),
   isFreeDelivery: z.boolean().optional(),
   estimatedDeliveryDays: z.coerce.number().int().min(0).max(30).optional(),
+  returnPolicy: z.string().max(2000, 'Return policy must not exceed 2000 characters.').optional(),
+  returnWindowDays: z.coerce.number().int().min(0, 'Return window days cannot be negative.').max(365, 'Return window days cannot exceed 365.').optional(),
+  isReturnable: z.boolean().optional(),
 });
 
 export const vendorUpdateProductSchema = vendorCreateProductSchema.partial();

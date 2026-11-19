@@ -23,6 +23,8 @@ import {
   Play,
   HelpCircle,
   Star,
+  RefreshCw,
+  Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -91,6 +93,13 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState("Found a better price elsewhere");
   const [isCancelling, setIsCancelling] = useState(false);
+
+  // Return modal state
+  const [returnItemId, setReturnItemId] = useState<string | null>(null);
+  const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
+  const [returnReason, setReturnReason] = useState("Defective or damaged item");
+  const [returnType, setReturnType] = useState<"RETURN" | "REPLACEMENT">("RETURN");
+  const [isReturning, setIsReturning] = useState(false);
 
   // Review state (only for purchased order items)
   const [reviewOpenFor, setReviewOpenFor] = useState<string | null>(null);
@@ -214,6 +223,47 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
       toast({ type: "error", message: msg });
     } finally {
       setIsCancelling(false);
+    }
+  };
+
+  // ── Return / Replacement ─────────────────────────────────────────────────────
+  const openReturnModal = (itemId: string) => {
+    setReturnItemId(itemId);
+    setReturnReason("Defective or damaged item");
+    setReturnType("RETURN");
+    setIsReturnModalOpen(true);
+  };
+
+  const handleConfirmReturn = async () => {
+    if (!order || !returnItemId) return;
+    const item = order.items.find((i) => i.id === returnItemId);
+    if (!item) return;
+    setIsReturning(true);
+    try {
+      await orderService.createReturn({
+        orderId: order.id,
+        productId: item.productId,
+        subOrderId: undefined,
+        quantity: item.quantity,
+        reason: returnReason.trim(),
+        type: returnType,
+        notes: `Customer requested ${returnType.toLowerCase()} via order details page.`,
+      });
+      toast({
+        type: "success",
+        title: "Return Request Submitted",
+        message: `Your ${returnType.toLowerCase()} request for item ${item.title} has been submitted and is pending approval.`,
+      });
+      setIsReturnModalOpen(false);
+      setReturnItemId(null);
+      // Refresh order to reflect latest status
+      const refreshed = await orderService.getOrderById(order.id);
+      setOrder(refreshed);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to submit return request";
+      toast({ type: "error", message: msg });
+    } finally {
+      setIsReturning(false);
     }
   };
 
@@ -641,6 +691,18 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
                         Total: {formatPrice(item.price * item.quantity)}
                       </p>
 
+                      {/* Return button (only when order is delivered) */}
+                      {String(order?.orderStatus || "").toUpperCase() === "DELIVERED" && (
+                        <button
+                          type="button"
+                          onClick={() => openReturnModal(item.id)}
+                          className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[#2874F0] hover:underline"
+                        >
+                          <Package size={13} />
+                          Return / Replace Item
+                        </button>
+                      )}
+
                       {isReviewEligibleOrder && (
                         <div className="mt-3 pt-3 border-t border-[#F0F0F0]">
                           {myReviews[item.productId] || reviewedProducts[item.productId] ? (
@@ -736,6 +798,63 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
                 ))}
               </div>
             </div>
+
+            {Array.isArray((order as any).returns) && (order as any).returns.length > 0 && (
+              <div className="bg-white border border-[#E0E0E0] rounded-sm p-4 sm:p-5 shadow-2xs">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#878787] mb-3 pb-2 border-b border-[#F0F0F0]">
+                  Return / Replacement Requests ({(order as any).returns.length})
+                </h3>
+                <div className="space-y-3">
+                  {(order as any).returns.map((ret: any) => {
+                    const status = String(ret?.status || "PENDING").toUpperCase();
+                    const statusStyles: Record<string, string> = {
+                      PENDING: "bg-amber-50 text-amber-700 border-amber-200",
+                      APPROVED: "bg-blue-50 text-blue-700 border-blue-200",
+                      PROCESSING: "bg-indigo-50 text-indigo-700 border-indigo-200",
+                      COMPLETED: "bg-green-50 text-green-700 border-green-200",
+                      REFUNDED: "bg-green-50 text-green-700 border-green-200",
+                      REPLACED: "bg-green-50 text-green-700 border-green-200",
+                      REJECTED: "bg-red-50 text-red-700 border-red-200",
+                      CANCELLED: "bg-gray-50 text-gray-700 border-gray-200",
+                    };
+                    const reqDate = ret?.requestDate || ret?.createdAt;
+                    const resolvedDate = ret?.resolvedAt || ret?.updatedAt;
+                    return (
+                      <div key={String(ret?._id || ret?.id || ret?.returnNumber || Math.random())} className="border border-[#F0F0F0] rounded-sm p-3 text-xs">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-semibold text-[#212121] truncate">
+                              {ret?.productName || "Product"}{ret?.quantity ? ` (Qty: ${ret.quantity})` : ""}
+                            </p>
+                            <p className="text-[#878787] mt-0.5">
+                              Request #{ret?.returnNumber || String(ret?._id || ret?.id || "-")} · {String(ret?.type || "RETURN")}
+                            </p>
+                          </div>
+                          <span className={cn("px-2 py-0.5 rounded-full border font-bold uppercase tracking-wide text-[10px] whitespace-nowrap", statusStyles[status] || "bg-gray-50 text-gray-700 border-gray-200")}>
+                            {status.replace(/_/g, " ")}
+                          </span>
+                        </div>
+                        {ret?.reason ? (
+                          <p className="text-[#555] mt-2"><span className="font-medium text-[#212121]">Reason:</span> {String(ret.reason)}</p>
+                        ) : null}
+                        {String(ret?.type || "RETURN").toUpperCase() !== "REPLACEMENT" && Number(ret?.refundAmount || 0) > 0 ? (
+                          <p className="text-[#555] mt-1">
+                            <span className="font-medium text-[#212121]">Refund Amount:</span> {formatPrice(Number(ret.refundAmount || 0))}
+                            {ret?.refundStatus ? <span className="text-[#878787]"> ({String(ret.refundStatus).replace(/_/g, " ")})</span> : null}
+                          </p>
+                        ) : null}
+                        {ret?.notes ? <p className="text-[#878787] mt-1">Note: {String(ret.notes)}</p> : null}
+                        <p className="text-[#878787] mt-2">
+                          Requested: {reqDate ? formatDate(String(reqDate)) : "-"}
+                          {resolvedDate && status !== "PENDING" ? ` · Last update: ${formatDate(String(resolvedDate))}` : ""}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-[#878787] mt-3">Status updates made by seller/admin will appear here when you refresh this page.</p>
+              </div>
+            )}
 
             {/* Help & Support strip */}
             <div className="bg-white border border-[#E0E0E0] rounded-sm p-4 shadow-2xs flex items-center justify-between text-xs text-[#555]">
@@ -844,8 +963,8 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
 
       {/* ── CANCELLATION MODAL DIALOG ────────────────────────────────────────── */}
       {isCancelModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-sm max-w-md w-full p-6 shadow-xl space-y-4 border border-[#E0E0E0] animate-in zoom-in-95 duration-200">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => { if (!isCancelling) setIsCancelModalOpen(false); }}>
+          <div className="bg-white rounded-sm max-w-md w-full p-6 shadow-xl space-y-4 border border-[#E0E0E0] animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-[#F0F0F0] pb-3">
               <h3 className="font-bold text-sm text-[#212121] flex items-center gap-1.5">
                 <AlertTriangle size={16} className="text-red-500" />
@@ -902,6 +1021,80 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
                 className="text-xs font-bold"
               >
                 Confirm Cancellation
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── RETURN / REPLACEMENT MODAL ─────────────────────────────────────────── */}
+      {isReturnModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => { if (!isReturning) setIsReturnModalOpen(false); }}>
+          <div className="bg-white rounded-sm max-w-md w-full p-6 shadow-xl space-y-4 border border-[#E0E0E0] animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-[#F0F0F0] pb-3">
+              <h3 className="font-bold text-sm text-[#212121] flex items-center gap-1.5">
+                <Package size={16} className="text-[#2874F0]" />
+                Return / Replace Item
+              </h3>
+              <button
+                onClick={() => setIsReturnModalOpen(false)}
+                className="text-gray-400 hover:text-gray-600 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-[#555] leading-relaxed">
+              Return or replacement requests are reviewed by the seller/admin and approved
+              only if within the product's return window after delivery.
+            </p>
+
+            <div>
+              <label className="block text-xs font-semibold text-[#212121] uppercase tracking-wider mb-1.5">
+                Request Type
+              </label>
+              <select
+                value={returnType}
+                onChange={(e) => setReturnType(e.target.value as "RETURN" | "REPLACEMENT")}
+                className="w-full h-10 px-3 text-xs bg-white border border-[#E0E0E0] rounded-xs focus:outline-none focus:border-[#2874F0] mb-4"
+              >
+                <option value="RETURN">Return for Refund</option>
+                <option value="REPLACEMENT">Replace with New Item</option>
+              </select>
+
+              <label className="block text-xs font-semibold text-[#212121] uppercase tracking-wider mb-1.5">
+                Reason
+              </label>
+              <select
+                value={returnReason}
+                onChange={(e) => setReturnReason(e.target.value)}
+                className="w-full h-10 px-3 text-xs bg-white border border-[#E0E0E0] rounded-xs focus:outline-none focus:border-[#2874F0] mb-4"
+              >
+                <option value="Defective or damaged item">Defective or damaged item</option>
+                <option value="Not as described">Not as described</option>
+                <option value="Wrong item received">Wrong item received</option>
+                <option value="No longer needed">No longer needed</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div className="flex gap-2 pt-2 justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsReturnModalOpen(false)}
+                className="text-xs"
+              >
+                Keep Item
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={handleConfirmReturn}
+                isLoading={isReturning}
+                className="text-xs font-bold"
+              >
+                Submit Return Request
               </Button>
             </div>
           </div>

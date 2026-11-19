@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import { MOCK_PRODUCTS } from "@/data";
 import { AdminProductEditClient } from "./AdminProductEditClient";
 
+export const instant = false;
+
 export async function generateStaticParams() {
-  return MOCK_PRODUCTS.map((p) => ({
-    id: p.id,
-  }));
+  return [{ id: "placeholder" }, ...MOCK_PRODUCTS.map((p) => ({ id: p.id }))];
 }
 
 export const metadata: Metadata = {

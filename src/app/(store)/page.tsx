@@ -11,11 +11,10 @@ import {
 import { categoryService } from "@/services/categoryService";
 import { productService } from "@/services/productService";
 import { MOCK_BANNERS } from "@/data/banners";
-import { HeroSlider } from "@/components/home/HeroSlider";
+import { DynamicHero, DynamicPromo } from "@/components/home/DynamicBanners";
 import { QuickCategoryBar } from "@/components/home/QuickCategoryBar";
 import { DealsSection } from "@/components/home/DealsSection";
 import { ProductSectionRow } from "@/components/home/ProductSectionRow";
-import { PromoBanner } from "@/components/home/PromoBanner";
 import { RecentlyViewedSection } from "@/components/home/RecentlyViewedSection";
 import { NewsletterSection } from "@/components/home/NewsletterSection";
 import { ShopByCategoryStrip } from "@/components/home/ShopByCategoryStrip";
@@ -91,7 +90,7 @@ export default async function HomePage() {
       <div className="max-w-[1280px] mx-auto px-3 sm:px-4">
         {/* SECTION 3: Hero Promotional Slider */}
         <div className="mb-6 rounded-sm overflow-hidden border border-[#E0E0E0] shadow-2xs">
-          <HeroSlider banners={heroBanners} autoSlideInterval={4500} />
+          <DynamicHero fallback={heroBanners} />
         </div>
 
         {/* SECTION 4: Shop by Category (Interactive Grid) */}
@@ -145,7 +144,7 @@ export default async function HomePage() {
         />
 
         {/* SECTION 8: Electronics Promotional Banner */}
-        <PromoBanner banner={electronicsPromo} />
+        <DynamicPromo id="promo-electronics" fallback={electronicsPromo} />
 
         {safeElectronics.length > 0 && (
           <ProductSectionRow
@@ -175,7 +174,7 @@ export default async function HomePage() {
         />
 
         {/* SECTION 9: Fashion Promotional Banner */}
-        <PromoBanner banner={fashionPromo} />
+        <DynamicPromo id="promo-fashion" fallback={fashionPromo} />
 
         {/* SECTION 10: Home & Lifestyle Products */}
         <ProductSectionRow

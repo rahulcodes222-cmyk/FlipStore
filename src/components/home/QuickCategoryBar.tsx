@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { Category } from "@/types";
 import { CategoryCard } from "@/components/common/CategoryCard";
 
@@ -9,19 +9,26 @@ export interface QuickCategoryBarProps {
 }
 
 export function QuickCategoryBar({ categories }: QuickCategoryBarProps) {
+  const [paused, setPaused] = useState(false);
   if (!categories?.length) return null;
 
-  // Duplicate list for seamless right-to-left marquee
-  const items = [...categories, ...categories];
   const duration = Math.max(18, categories.length * 2.5);
 
   return (
     <div className="w-full bg-white border-b border-[#E0E0E0] shadow-2xs py-3 sm:py-4 mb-4 overflow-hidden">
       <div className="max-w-[1280px] mx-auto px-2 sm:px-4 overflow-hidden">
-        <div className="overflow-hidden" aria-label="Browse categories">
+        <div
+          className="overflow-hidden"
+          aria-label="Browse categories"
+          onMouseEnter={() => setPaused(true)}
+          onMouseLeave={() => setPaused(false)}
+        >
           <div
             className="flex w-max items-center will-change-transform"
-            style={{ animation: `flipstore-marquee ${duration}s linear infinite` }}
+            style={{
+              animation: `flipstore-marquee ${duration}s linear infinite`,
+              animationPlayState: paused ? "paused" : "running",
+            }}
           >
             <div className="flex shrink-0 items-center gap-3 sm:gap-5 pr-3 sm:pr-5">
               {categories.map((category) => (

@@ -205,9 +205,9 @@ export function AdminCustomersClient() {
       </div>
 
       {/* ── Customer Details Modal ───────────────────────────────────────────── */}
-      {selectedCustomer && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-md max-w-lg w-full p-6 shadow-2xl relative space-y-4">
+        {selectedCustomer && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setSelectedCustomer(null)}>
+            <div className="bg-white rounded-md max-w-lg w-full p-6 shadow-2xl relative space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between border-b border-gray-100 pb-3">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-full bg-[#2874F0] text-white font-bold flex items-center justify-center text-base">

@@ -135,26 +135,30 @@ export const adminService = {
   },
 
   async getProductById(id: string): Promise<Product | null> {
+    let lastError = "";
     try {
-      const res = await fetch(`${API_BASE}/api/v1/products/${id}`, {
+      const res = await adminFetch(`${API_BASE}/api/v1/products/${encodeURIComponent(id)}?scope=all`, {
         method: "GET",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
       });
       const body = await res.json().catch(() => ({} as any));
       if (res.ok && body?.success !== false && body?.data) {
         return mapApiProductToFrontend(body.data);
       }
-      if (res.status !== 404 && res.ok === false && body?.success === false) {
-        // try fallback below for transient/compat cases
+      if (!res.ok) {
+        lastError = body?.message || body?.error?.message || `HTTP ${res.status}`;
       }
-    } catch {}
-    try {
-      const list = await this.getProducts({ query: id });
-      return list.find((p) => p.id === id || p.slug === id) || null;
-    } catch {
-      return null;
+    } catch (e: any) {
+      lastError = e?.message || lastError;
     }
+    try {
+      const list = await this.getProducts({ adminView: true });
+      const found = list.find((p) => p.id === id || p.slug === id) || null;
+      if (found) return found;
+    } catch {}
+    if (lastError) {
+      throw new Error(lastError);
+    }
+    return null;
   },
 
   async createProduct(productData: Omit<Product, "id" | "createdAt">): Promise<Product> {
@@ -184,9 +188,8 @@ export const adminService = {
 
   async updateProduct(id: string, updates: Partial<Product>): Promise<Product> {
     const payload = toApiUpdateProductPayload(updates as any);
-    const res = await fetch(`${API_BASE}/api/v1/products/${id}`, {
+    const res = await adminFetch(`${API_BASE}/api/v1/products/${encodeURIComponent(id)}`, {
       method: "PATCH",
-      credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
@@ -681,6 +684,9 @@ function mapApiProductToFrontend(item: any): Product {
     highlights: Array.isArray(item?.highlights) ? item.highlights : [],
     specifications: (item?.specifications as any) || {},
     tags: Array.isArray(item?.tags) ? item.tags : [],
+    returnPolicy: String(item?.returnPolicy || ""),
+    returnWindowDays: Number(item?.returnWindowDays ?? 7),
+    isReturnable: item?.isReturnable !== false,
     createdAt: String(item?.createdAt || new Date().toISOString()),
   } as Product;
 }
@@ -748,6 +754,9 @@ function toApiCreateProductPayload(productData: any): any {
     isAssured: !!productData?.isAssured,
     isFreeDelivery: !!productData?.isFreeDelivery,
     estimatedDeliveryDays: Number(productData?.estimatedDeliveryDays ?? 3) || 3,
+    returnPolicy: productData?.returnPolicy ?? "",
+    returnWindowDays: productData?.returnWindowDays ?? 7,
+    isReturnable: productData?.isReturnable ?? true,
   };
   const catId = String(productData?.categoryId || '').trim();
   if (/^[a-f\d]{24}$/i.test(catId)) payload.categoryId = catId;
@@ -786,6 +795,10 @@ function toApiUpdateProductPayload(updates: any): any {
   }
   if (updates?.isAssured !== undefined) out.isAssured = !!updates.isAssured;
   if (updates?.isFreeDelivery !== undefined) out.isFreeDelivery = !!updates.isFreeDelivery;
+  if (updates?.estimatedDeliveryDays !== undefined) out.estimatedDeliveryDays = Number(updates.estimatedDeliveryDays);
+  if (updates?.returnPolicy !== undefined) out.returnPolicy = String(updates.returnPolicy ?? "").trim();
+  if (updates?.returnWindowDays !== undefined) out.returnWindowDays = Number(updates.returnWindowDays);
+  if (updates?.isReturnable !== undefined) out.isReturnable = !!updates.isReturnable;
   if (updates?.thumbnail !== undefined || updates?.images !== undefined) {
     const url = updates.thumbnail || (Array.isArray(updates.images) ? (typeof updates.images[0] === 'string' ? updates.images[0] : updates.images[0]?.url) : null);
     if (url) out.images = [{ id: `img-${Date.now()}`, url: String(url), alt: String(updates.title || updates.name || 'Product'), isPrimary: true }];

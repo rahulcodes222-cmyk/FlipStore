@@ -11,7 +11,6 @@ import {
   IndianRupee,
   AlertTriangle,
   ArrowRight,
-  Plus,
   RefreshCw,
   ExternalLink,
   CheckCircle2,
@@ -97,13 +96,6 @@ export function AdminDashboardClient() {
             <RefreshCw size={14} className="mr-1.5" />
             Refresh
           </Button>
-
-          <Link href="/admin/products/add">
-            <Button size="sm" className="h-9 text-xs font-bold bg-[#2874F0] hover:bg-[#1259c7] text-white">
-              <Plus size={14} className="mr-1" />
-              Add Product
-            </Button>
-          </Link>
         </div>
       </div>
 

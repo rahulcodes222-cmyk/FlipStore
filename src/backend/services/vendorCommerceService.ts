@@ -339,6 +339,9 @@ function applySellerEditableFields(product: any, input: Partial<VendorCreateProd
   if (input.seoDescription !== undefined) product.seoDescription = input.seoDescription || '';
   if (input.isFreeDelivery !== undefined) product.isFreeDelivery = !!input.isFreeDelivery;
   if (input.estimatedDeliveryDays !== undefined) product.estimatedDeliveryDays = Math.max(0, Number(input.estimatedDeliveryDays));
+  if (input.returnPolicy !== undefined) product.returnPolicy = String(input.returnPolicy || '').trim();
+  if (input.returnWindowDays !== undefined) product.returnWindowDays = Math.max(0, Math.min(365, Number(input.returnWindowDays)));
+  if (input.isReturnable !== undefined) product.isReturnable = !!input.isReturnable;
   return product;
 }
 
@@ -406,6 +409,9 @@ export async function createVendorProduct(sellerId: string, actorId: string, inp
     isAssured: false,
     isFreeDelivery: !!input.isFreeDelivery,
     estimatedDeliveryDays: Math.max(0, Number(input.estimatedDeliveryDays ?? 3)),
+    returnPolicy: input.returnPolicy || '',
+    returnWindowDays: Math.max(0, Math.min(365, Number(input.returnWindowDays ?? 7))),
+    isReturnable: input.isReturnable ?? true,
   } as any);
 
   syncProductApprovalState(product);

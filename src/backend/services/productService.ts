@@ -106,6 +106,9 @@ function normalizeProduct(doc: IProductDocument): Record<string, unknown> {
     isAssured: doc.isAssured,
     isFreeDelivery: doc.isFreeDelivery,
     estimatedDeliveryDays: doc.estimatedDeliveryDays,
+    returnPolicy: doc.returnPolicy || '',
+    returnWindowDays: doc.returnWindowDays ?? 7,
+    isReturnable: doc.isReturnable ?? true,
     sellerId: doc.sellerId.toString(),
     inStock: doc.stock > 0,
     createdAt: doc.createdAt,
@@ -192,6 +195,9 @@ export async function createProduct(
     isAssured: false, // admin-only badge
     isFreeDelivery: data.isFreeDelivery ?? false,
     estimatedDeliveryDays: data.estimatedDeliveryDays ?? 3,
+    returnPolicy: data.returnPolicy ?? '',
+    returnWindowDays: data.returnWindowDays ?? 7,
+    isReturnable: data.isReturnable ?? true,
   };
 
   const product = await ProductModel.create(productData);
@@ -563,6 +569,9 @@ export async function updateProduct(
   if (data.isAssured !== undefined) (product as any).isAssured = !!data.isAssured;
   if (data.isFreeDelivery !== undefined) (product as any).isFreeDelivery = !!data.isFreeDelivery;
   if (data.estimatedDeliveryDays !== undefined) (product as any).estimatedDeliveryDays = Number(data.estimatedDeliveryDays);
+  if (data.returnPolicy !== undefined) (product as any).returnPolicy = String(data.returnPolicy || '').trim();
+  if (data.returnWindowDays !== undefined) (product as any).returnWindowDays = Number(data.returnWindowDays);
+  if (data.isReturnable !== undefined) (product as any).isReturnable = !!data.isReturnable;
 
   syncProductApprovalState(product as any);
   const updated = await product.save();

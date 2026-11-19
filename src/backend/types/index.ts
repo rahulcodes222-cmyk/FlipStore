@@ -315,6 +315,9 @@ export interface IProductDocument {
   isAssured: boolean;
   isFreeDelivery: boolean;
   estimatedDeliveryDays: number;
+  returnPolicy?: string;
+  returnWindowDays?: number;
+  isReturnable?: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -767,6 +770,7 @@ export interface IReturnRequestDocument {
   resolvedAt?: Date;
   refundAmount: number;
   refundStatus?: string;
+  stockRestored?: boolean;
   statusHistory?: IOrderStatusHistoryEntry[];
   notes?: string;
   createdAt: Date;
