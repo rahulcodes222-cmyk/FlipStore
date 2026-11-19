@@ -94,40 +94,36 @@ export async function createProductReview(params: {
       { "items.productId": productObjectId },
       { "items.productId": productId },
     ],
-    orderStatus: {
-      $nin: ["CANCELLED", "RETURNED", "REFUNDED"],
-    },
+    orderStatus: "DELIVERED",
   };
   if (data.orderId) {
-    if (!mongoose.isValidObjectId(data.orderId)) {
+    const rawOrderId = String(data.orderId).trim();
+    if (!rawOrderId) {
       throw new Error("Invalid order.");
     }
-    purchasedOrderQuery.$and = [
-      {
-        $or: [
-          { _id: new mongoose.Types.ObjectId(data.orderId) },
-          { orderNumber: String(data.orderId).trim() },
-        ],
-      },
-    ];
+    const orderIdOr: any[] = [{ orderNumber: rawOrderId }];
+    if (mongoose.isValidObjectId(rawOrderId)) {
+      orderIdOr.unshift({ _id: new mongoose.Types.ObjectId(rawOrderId) });
+    }
+    purchasedOrderQuery.$and = [{ $or: orderIdOr }];
   }
   const purchasedOrder = await OrderModel.findOne(purchasedOrderQuery)
-    .select("_id orderNumber")
+    .select("_id orderNumber orderStatus")
     .sort({ placedAt: -1, createdAt: -1 })
     .lean()
     .exec() as any;
 
   if (!purchasedOrder) {
-    throw new Error("You can review this product only after purchasing it.");
+    throw new Error(data.orderId
+      ? "You can review this product only after this order is delivered."
+      : "You can review this product only after a delivered purchase.");
   }
 
   const existingQuery: any = { productId, userId };
   if (purchasedOrder?._id) existingQuery.orderId = purchasedOrder._id;
   const existing = await ReviewModel.findOne(existingQuery as any).lean().exec();
   if (existing) {
-    throw new Error(data.orderId
-      ? "You have already reviewed this product for this order."
-      : "You have already reviewed this product. To review it again, submit from a new delivered/purchased order.");
+    throw new Error("You have already reviewed this product for this order.");
   }
 
   try {

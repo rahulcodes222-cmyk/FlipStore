@@ -101,7 +101,7 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
 
   const isReviewEligibleOrder = useMemo(() => {
     const st = String(order?.orderStatus || "").toUpperCase();
-    return !!order && !["CANCELLED", "RETURNED", "REFUNDED"].includes(st);
+    return !!order && st === "DELIVERED";
   }, [order]);
 
   // Load Order
@@ -724,7 +724,7 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
                                       Cancel
                                     </button>
                                   </div>
-                                  <p className="text-[10px] text-[#878787]">Only customers who purchased this product can submit a review. One review per order.</p>
+                                  <p className="text-[10px] text-[#878787]">Only customers who purchased and received this product can submit a review. One review per order.</p>
                                 </div>
                               )}
                             </>
