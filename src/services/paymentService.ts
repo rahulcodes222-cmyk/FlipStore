@@ -1,5 +1,5 @@
 /**
- * Payment API client (Razorpay test/sandbox-ready)
+ * Payment API client (Razorpay/Cashfree, sandbox-ready)
  */
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -7,13 +7,21 @@ export type CreatePaymentOrderResponse = {
   paymentId: string;
   transactionId: string;
   status: string;
-  razorpayOrderId?: string;
   amount: number;
   currency: string;
   keyId: string;
   sandbox: boolean;
   alreadyPaid: boolean;
+  gateway?: 'RAZORPAY' | 'CASHFREE' | string;
+  // Razorpay
+  razorpayOrderId?: string;
   razorpayOrder?: { id: string; amount: number; currency: string; receipt: string } | null;
+  // Cashfree
+  cashfreeOrderId?: string;
+  paymentSessionId?: string;
+  cashfreeOrderToken?: string;
+  orderToken?: string;
+  cashfreeEnv?: 'sandbox' | 'production' | string;
 };
 
 export type VerifyPaymentResponse = {
@@ -23,10 +31,8 @@ export type VerifyPaymentResponse = {
   verified: boolean;
   idempotent: boolean;
   sandbox: boolean;
+  gateway?: 'RAZORPAY' | 'CASHFREE' | string;
 };
-
-
-
 
 function getStoredAccessToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -88,9 +94,14 @@ export async function createPaymentOrder(orderId: string, idempotencyKey?: strin
 
 export async function verifyPayment(input: {
   paymentId: string;
-  razorpayOrderId: string;
-  razorpayPaymentId: string;
-  razorpaySignature: string;
+  // Razorpay
+  razorpayOrderId?: string;
+  razorpayPaymentId?: string;
+  razorpaySignature?: string;
+  // Cashfree / generic
+  gateway?: string;
+  gatewayOrderId?: string;
+  cashfreeOrderId?: string;
 }): Promise<VerifyPaymentResponse> {
   const res = await fetchWithAuthRetry(`${API_BASE}/api/v1/payments/verify`, {
     method: 'POST',

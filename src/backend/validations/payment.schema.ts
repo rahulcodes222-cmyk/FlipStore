@@ -1,5 +1,5 @@
 /**
- * Zod Validation Schemas for Payments (Razorpay)
+ * Zod Validation Schemas for Payments (Razorpay / Cashfree)
  */
 import { z } from 'zod';
 
@@ -10,9 +10,20 @@ export const createPaymentOrderSchema = z.object({
 
 export const verifyPaymentSchema = z.object({
   paymentId: z.string().min(1, 'Payment record ID is required.'),
-  razorpayOrderId: z.string().min(1, 'Razorpay order ID is required.'),
-  razorpayPaymentId: z.string().min(1, 'Razorpay payment ID is required.'),
-  razorpaySignature: z.string().min(1, 'Razorpay signature is required.'),
+  // Razorpay fields (optional when using Cashfree/server-verified gateway)
+  razorpayOrderId: z.string().min(1).optional(),
+  razorpayPaymentId: z.string().min(1).optional(),
+  razorpaySignature: z.string().min(1).optional(),
+  // Cashfree / generic gateway fields
+  gateway: z.string().optional(),
+  gatewayOrderId: z.string().min(1).optional(),
+  cashfreeOrderId: z.string().min(1).optional(),
+}).refine((data) => {
+  const hasRazorpay = !!(data.razorpayOrderId && data.razorpayPaymentId && data.razorpaySignature);
+  const hasGatewayOrder = !!(data.gatewayOrderId || data.cashfreeOrderId || data.razorpayOrderId);
+  return hasRazorpay || hasGatewayOrder;
+}, {
+  message: 'Provide Razorpay verification fields or gateway order reference.',
 });
 
 export const refundPaymentSchema = z.object({

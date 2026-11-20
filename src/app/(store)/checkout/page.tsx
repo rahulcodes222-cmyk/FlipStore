@@ -40,6 +40,7 @@ import { cn } from "@/lib/utils";
 declare global {
   interface Window {
     Razorpay?: new (options: Record<string, unknown>) => { open: () => void; on: (event: string, cb: (res: any) => void) => void };
+    Cashfree?: (config?: any) => { checkout: (opts: any) => Promise<any> };
   }
 }
 
@@ -55,6 +56,25 @@ function loadRazorpayScript(): Promise<boolean> {
     }
     const script = document.createElement("script");
     script.src = "https://checkout.razorpay.com/v1/checkout.js";
+    script.async = true;
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
+  });
+}
+
+function loadCashfreeScript(): Promise<boolean> {
+  if (typeof window === "undefined") return Promise.resolve(false);
+  if (window.Cashfree) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const existing = document.querySelector('script[src="https://sdk.cashfree.com/js/v3/cashfree.js"]') as HTMLScriptElement | null;
+    if (existing) {
+      existing.addEventListener("load", () => resolve(true));
+      existing.addEventListener("error", () => resolve(false));
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://sdk.cashfree.com/js/v3/cashfree.js";
     script.async = true;
     script.onload = () => resolve(true);
     script.onerror = () => resolve(false);
@@ -521,16 +541,6 @@ export default function CheckoutPage() {
       setPaymentError(`Incorrect security code. Please type ${expectedCaptcha}`);
       return;
     }
-    if (paymentMethod === "CARD") {
-      const cleanCard = cardNumber.replace(/\s/g, "");
-      if (cleanCard.length < 12) { setPaymentError("Please enter a valid card number"); return; }
-      if (!cardExpiry || cardExpiry.length < 4) { setPaymentError("Please enter card expiry"); return; }
-      if (!cardCvv || cardCvv.length < 3) { setPaymentError("Please enter a valid CVV"); return; }
-    }
-    if (paymentMethod === "UPI" && upiMethod === "id" && upiId && (!upiId.includes("@") || upiId.length < 5)) {
-      setPaymentError("Please enter a valid UPI ID (e.g. yourname@okhdfcbank)");
-      return;
-    }
 
     setIsProcessingPayment(true);
     const idempotencyKey = `checkout:${user.id}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
@@ -579,7 +589,7 @@ export default function CheckoutPage() {
         return;
       }
 
-      // Online: create Razorpay order (sandbox-ready if keys missing) and verify server-side.
+      // Online: create gateway order (Cashfree/Razorpay) and verify server-side.
       const payInit = await createPaymentOrder(orderId, idempotencyKey);
       if (payInit.alreadyPaid) {
         const fullOrder = await orderService.getOrderById(created.orderNumber || orderId);
@@ -590,20 +600,50 @@ export default function CheckoutPage() {
         return;
       }
 
-      const razorpayOrderId = payInit.razorpayOrderId || payInit.razorpayOrder?.id || "";
+      const gateway = String((payInit as any).gateway || 'RAZORPAY').toUpperCase();
+      const gatewayOrderId = String((payInit as any).gatewayOrderId || (payInit as any).cashfreeOrderId || payInit.razorpayOrderId || payInit.razorpayOrder?.id || '');
       const completeSandbox = async () => {
         if (simulateFailure) throw new Error("Payment cancelled or failed (simulated). Order remains pending payment.");
         const fakePaymentId = `pay_sandbox_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-        await verifyPayment({
-          paymentId: payInit.paymentId,
-          razorpayOrderId: razorpayOrderId || `order_sandbox_${created.orderNumber}`,
-          razorpayPaymentId: fakePaymentId,
-          razorpaySignature: "sandbox_signature",
-        });
+        if (gateway === 'CASHFREE') {
+          await verifyPayment({
+            paymentId: payInit.paymentId,
+            gateway: 'CASHFREE',
+            gatewayOrderId: gatewayOrderId || `order_sandbox_${created.orderNumber}`,
+            cashfreeOrderId: gatewayOrderId || `order_sandbox_${created.orderNumber}`,
+          } as any);
+        } else {
+          await verifyPayment({
+            paymentId: payInit.paymentId,
+            razorpayOrderId: gatewayOrderId || `order_sandbox_${created.orderNumber}`,
+            razorpayPaymentId: fakePaymentId,
+            razorpaySignature: "sandbox_signature",
+          } as any);
+        }
       };
 
       let usedRealGateway = false;
-      if (!payInit.sandbox && payInit.keyId && razorpayOrderId) {
+      if (gateway === 'CASHFREE' && !(payInit as any).sandbox && (payInit as any).paymentSessionId) {
+        const loaded = await loadCashfreeScript();
+        if (loaded && window.Cashfree) {
+          usedRealGateway = true;
+          const cashfree = window.Cashfree({ mode: String((payInit as any).cashfreeEnv || 'sandbox') === 'production' ? 'production' : 'sandbox' });
+          const cfResult: any = await cashfree.checkout({
+            paymentSessionId: (payInit as any).paymentSessionId,
+            redirectTarget: '_modal',
+          });
+          if (cfResult?.error) {
+            throw new Error(cfResult.error?.message || "Payment cancelled. Order remains pending payment.");
+          }
+          const verified = await verifyPayment({
+            paymentId: payInit.paymentId,
+            gateway: 'CASHFREE',
+            gatewayOrderId,
+            cashfreeOrderId: gatewayOrderId,
+          } as any);
+          if (!(verified as any)?.verified) throw new Error('Payment not confirmed by gateway.');
+        }
+      } else if (gateway !== 'CASHFREE' && !payInit.sandbox && payInit.keyId && gatewayOrderId) {
         const loaded = await loadRazorpayScript();
         if (loaded && window.Razorpay) {
           usedRealGateway = true;
@@ -615,7 +655,7 @@ export default function CheckoutPage() {
                 currency: payInit.currency || "INR",
                 name: "ShopHub (Test Mode)",
                 description: `Order ${created.orderNumber}`,
-                order_id: razorpayOrderId,
+                order_id: gatewayOrderId,
                 prefill: { name: user.name, email: user.email, contact: user.phone },
                 notes: { orderId },
                 theme: { color: "#2874F0" },
@@ -623,10 +663,10 @@ export default function CheckoutPage() {
                   try {
                     await verifyPayment({
                       paymentId: payInit.paymentId,
-                      razorpayOrderId: response.razorpay_order_id || razorpayOrderId,
+                      razorpayOrderId: response.razorpay_order_id || gatewayOrderId,
                       razorpayPaymentId: response.razorpay_payment_id,
                       razorpaySignature: response.razorpay_signature,
-                    });
+                    } as any);
                     resolve();
                   } catch (e) {
                     reject(e);
@@ -642,16 +682,16 @@ export default function CheckoutPage() {
           });
         }
       }
-
       if (!usedRealGateway) {
-        // Sandbox-ready path (no keys or checkout unavailable) — no real money charged.
+        // Sandbox-ready fallback (no keys/SDK unavailable) — no real money charged.
         await completeSandbox();
+        const gw = String((payInit as any).gateway || "RAZORPAY").toUpperCase();
         toast({
           type: "info",
-          title: payInit.sandbox ? "Sandbox mode (no real charge)" : "Sandbox payment",
-          message: payInit.sandbox
-            ? "Razorpay keys not configured. Payment simulated and server-verified in sandbox mode."
-            : "Razorpay checkout unavailable; payment simulated and server-verified (no real charge).",
+          title: (payInit as any).sandbox ? "Sandbox mode (no real charge)" : "Sandbox payment",
+          message: (payInit as any).sandbox
+            ? `${gw} keys not configured. Payment simulated and server-verified in sandbox mode.`
+            : `${gw} checkout unavailable; payment simulated and server-verified (no real charge).`,
         });
       }
 
@@ -662,8 +702,9 @@ export default function CheckoutPage() {
       toast({ type: "success", title: "Payment verified", message: `Order ID: ${created.orderNumber}` });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Payment/order failed. Please try again.";
+      setCurrentStep((s) => (s < 4 ? 4 : s));
       if (/authentication required|unauthor|session expired|token/i.test(msg)) {
-        setPaymentError("Session expired. Please log out and log in again, then retry COD.");
+        setPaymentError("Session expired. Please log out and log in again, then retry.");
       } else {
         setPaymentError(msg);
       }
@@ -829,7 +870,22 @@ export default function CheckoutPage() {
                       </div>
                     ))}
                   </div>
-                  <Button variant="buyNow" onClick={() => setCurrentStep(4)} className="font-bold text-xs flex items-center gap-1"><span>Continue to Payment</span><ArrowRight size={14} /></Button>
+                  <Button
+                    variant="buyNow"
+                    onClick={() => {
+                      setPaymentError(null);
+                      if (paymentMethod === "COD") {
+                        setCurrentStep(4);
+                      } else {
+                        void handlePlaceOrder();
+                      }
+                    }}
+                    disabled={isProcessingPayment || summaryLoading}
+                    className="font-bold text-xs flex items-center gap-1"
+                  >
+                    <span>{isProcessingPayment ? "Processing..." : "Continue to Payment"}</span>
+                    {!isProcessingPayment && <ArrowRight size={14} />}
+                  </Button>
                 </div>
               ) : currentStep > 3 ? (<div className="p-3 px-4 text-xs text-[#555] bg-white">{items.length} {items.length === 1 ? "item" : "items"} ready for dispatch</div>) : null}
             </div>

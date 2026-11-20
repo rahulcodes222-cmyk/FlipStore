@@ -43,6 +43,10 @@ const getters: Record<string, () => unknown> = {
   razorpayKeySecret: () => getOptional('RAZORPAY_KEY_SECRET', ''),
   razorpayWebhookSecret: () => getOptional('RAZORPAY_WEBHOOK_SECRET', ''),
   publicRazorpayKeyId: () => getOptional('NEXT_PUBLIC_RAZORPAY_KEY_ID', ''),
+  cashfreeAppId: () => getOptional('CASHFREE_APP_ID', ''),
+  cashfreeSecretKey: () => getOptional('CASHFREE_SECRET_KEY', ''),
+  cashfreeEnv: () => getOptional('CASHFREE_ENV', 'sandbox'),
+  cashfreeApiUrl: () => getOptional('CASHFREE_API_URL', ''),
   bcryptSaltRounds: () => getOptionalNumber('BCRYPT_SALT_ROUNDS', 12),
   cookieSameSite: () => (getOptional('COOKIE_SAME_SITE', 'lax') as 'lax' | 'strict' | 'none'),
   cookieSecure: () => getOptional('COOKIE_SECURE', 'false') === 'true',
@@ -82,6 +86,10 @@ type EnvShape = {
   razorpayKeySecret: string;
   razorpayWebhookSecret: string;
   publicRazorpayKeyId: string;
+  cashfreeAppId: string;
+  cashfreeSecretKey: string;
+  cashfreeEnv: string;
+  cashfreeApiUrl: string;
   bcryptSaltRounds: number;
   cookieSameSite: 'lax' | 'strict' | 'none';
   cookieSecure: boolean;

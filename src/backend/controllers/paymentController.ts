@@ -56,15 +56,20 @@ export const createPaymentOrderHandler = withDatabase(
             paymentId: String((result.payment as any)._id || (result.payment as any).id),
             transactionId: result.payment.transactionId,
             status: result.payment.status,
-            razorpayOrderId: result.payment.gatewayOrderId,
-            amount: result.payment.grossAmount,
-            currency: 'INR',
-            keyId: result.keyId || '',
-            sandbox: result.sandbox,
-            alreadyPaid: result.alreadyPaid,
-            razorpayOrder: result.razorpayOrder,
+            gateway: (result as any).gateway || result.payment.gateway,
+            razorpayOrderId: (result as any).razorpayOrderId || result.payment.gatewayOrderId,
+            cashfreeOrderId: (result as any).cashfreeOrderId,
+            gatewayOrderId: (result as any).gatewayOrderId || result.payment.gatewayOrderId,
+            paymentSessionId: (result as any).paymentSessionId,
+            cashfreeEnv: (result as any).cashfreeEnv,
+            amount: (result as any).amount ?? result.payment.grossAmount,
+            currency: (result as any).currency || 'INR',
+            keyId: (result as any).keyId || '',
+            sandbox: (result as any).sandbox,
+            alreadyPaid: (result as any).alreadyPaid,
+            razorpayOrder: (result as any).razorpayOrder || null,
           },
-          { message: result.alreadyPaid ? 'Order already paid.' : 'Payment order created.' },
+          { message: (result as any).alreadyPaid ? 'Order already paid.' : 'Payment order created.' },
         ),
         { status: HTTP_STATUS.OK },
       );
@@ -94,6 +99,7 @@ export const verifyPaymentHandler = withDatabase(
             verified: result.verified,
             idempotent: result.idempotent,
             sandbox: result.sandbox ?? false,
+            gateway: (result as any).gateway || result.payment.gateway,
           },
           { message: result.idempotent ? 'Payment already verified.' : 'Payment verified successfully.' },
         ),
@@ -105,7 +111,7 @@ export const verifyPaymentHandler = withDatabase(
   }),
 );
 
-// Webhook: no user auth; authenticity enforced via Razorpay webhook signature (or sandbox mode when secret unset).
+// Webhook: no user auth; authenticity enforced via gateway signature (or sandbox mode when secret unset).
 export async function webhookHandler(req: NextRequest): Promise<NextResponse> {
   try {
     await connectDB();
@@ -117,7 +123,10 @@ export async function webhookHandler(req: NextRequest): Promise<NextResponse> {
     } catch {
       event = {};
     }
-    const result = await handleWebhook(rawBody, signature, event);
+    const result = await handleWebhook(rawBody, signature, event, {
+      'x-webhook-signature': req.headers.get('x-webhook-signature'),
+      'x-webhook-timestamp': req.headers.get('x-webhook-timestamp'),
+    });
     return NextResponse.json(createSuccessResponse(result, { message: 'Webhook processed.' }), { status: HTTP_STATUS.OK });
   } catch (error) {
     if (error instanceof PaymentServiceError && error.code === 'INVALID_WEBHOOK_SIGNATURE') {
