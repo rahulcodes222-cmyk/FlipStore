@@ -101,6 +101,13 @@ function toIsoString(value: unknown): string {
 export const orderService = {
   async getCheckoutSummary(payload: {
     shippingAddressId: string;
+    shippingAddress?: {
+      pincode?: string;
+      city?: string;
+      state?: string;
+      locality?: string;
+      street?: string;
+    };
     paymentMethod: PaymentMethod;
     couponCode?: string;
     items: Array<{
@@ -119,6 +126,7 @@ export const orderService = {
           quantity: i.quantity,
         })),
         shippingAddressId: payload.shippingAddressId,
+        ...(payload.shippingAddress ? { shippingAddress: payload.shippingAddress } : {}),
         paymentMethod: payload.paymentMethod,
         ...(payload.couponCode?.trim() ? { couponCode: payload.couponCode.trim() } : {}),
       }),
@@ -158,6 +166,13 @@ export const orderService = {
 
   async createOrder(payload: {
     shippingAddressId: string;
+    shippingAddress?: {
+      pincode?: string;
+      city?: string;
+      state?: string;
+      locality?: string;
+      street?: string;
+    };
     paymentMethod: PaymentMethod;
     couponCode?: string;
     cartItems?: Array<{ productId: string; variantId?: string; quantity: number }>;

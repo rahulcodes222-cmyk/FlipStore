@@ -302,6 +302,13 @@ export default function CheckoutPage() {
       try {
         const summaryData = await orderService.getCheckoutSummary({
           shippingAddressId: selectedAddress.id,
+          shippingAddress: {
+            pincode: selectedAddress.pincode,
+            city: selectedAddress.city,
+            state: selectedAddress.state,
+            locality: selectedAddress.locality,
+            street: selectedAddress.street,
+          },
           paymentMethod,
           couponCode: appliedCouponCode || undefined,
           items: items.map((i) => ({
@@ -336,6 +343,13 @@ export default function CheckoutPage() {
             try {
               const plain = await orderService.getCheckoutSummary({
                 shippingAddressId: selectedAddress.id,
+                shippingAddress: {
+                  pincode: selectedAddress.pincode,
+                  city: selectedAddress.city,
+                  state: selectedAddress.state,
+                  locality: selectedAddress.locality,
+                  street: selectedAddress.street,
+                },
                 paymentMethod,
                 items: items.map((i) => ({ productId: i.product.id, variantId: i.selectedVariants?.variantId, quantity: i.quantity })),
               });
@@ -538,6 +552,13 @@ export default function CheckoutPage() {
       // Server creates order with server-calculated pricing/status (online starts PENDING).
       const created = await orderService.createOrder({
         shippingAddressId: selectedAddress.id,
+        shippingAddress: {
+          pincode: selectedAddress.pincode,
+          city: selectedAddress.city,
+          state: selectedAddress.state,
+          locality: selectedAddress.locality,
+          street: selectedAddress.street,
+        },
         paymentMethod,
         ...(appliedCouponCode ? { couponCode: appliedCouponCode } : {}),
         cartItems: items.map((i) => ({

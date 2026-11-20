@@ -20,13 +20,27 @@ export const checkoutSummarySchema = z.object({
   cartItems: z.array(cartItemSchema).min(1, 'At least one cart item is required.'),
   shippingAddressId: z.string().min(1, 'Shipping address ID is required.'),
   paymentMethod: z.enum(['COD', 'UPI', 'CARD', 'NET_BANKING']),
+  shippingAddress: z.object({
+    pincode: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    locality: z.string().optional(),
+    street: z.string().optional(),
+  }).optional(),
 });
 
 export const createOrderSchema = z.object({
   shippingAddressId: z.string().min(1, 'Shipping address ID is required.'),
   paymentMethod: z.enum(['COD', 'UPI', 'CARD', 'NET_BANKING']),
   couponCode: z.string().trim().min(1).optional(),
-  // Optional fallback for client-tracked carts; server still validates products/stock/prices from DB.
+  shippingAddress: z.object({
+    pincode: z.string().optional(),
+    city: z.string().optional(),
+    state: z.string().optional(),
+    locality: z.string().optional(),
+    street: z.string().optional(),
+  }).optional(),
+  // Optional fallback for client-tracked carts; prices/stock are server-validated from DB.
   cartItems: z.array(cartItemSchema).optional(),
 });
 

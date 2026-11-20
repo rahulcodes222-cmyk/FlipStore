@@ -409,10 +409,11 @@ export async function getCheckoutSummary(userId: string, input: CheckoutSummaryI
   }
 
   const discount = Math.max(0, totalMrp - subtotal);
+  const destinationPincode = input.shippingAddress?.pincode || String((address as any)?.pincode || '');
   const delivery = await resolveCheckoutDeliveryCharge({
     subtotal,
     totalQuantity,
-    destinationPincode: String((address as any)?.pincode || ''),
+    destinationPincode,
     paymentMethod: input.paymentMethod,
   });
   const deliveryCharges = delivery.deliveryCharges;
@@ -461,10 +462,11 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
     }
 
     let { orderItems, totalMrp, subtotal, discount, totalQuantity } = built;
+    const destinationPincode = input.shippingAddress?.pincode || String((address as any)?.pincode || '');
     const delivery = await resolveCheckoutDeliveryCharge({
       subtotal,
       totalQuantity: totalQuantity || (orderItems || []).reduce((s: number, i: any) => s + Number(i.quantity || 0), 0),
-      destinationPincode: String((address as any)?.pincode || ''),
+      destinationPincode,
       paymentMethod: input.paymentMethod,
     });
     const deliveryCharges = round2(delivery.deliveryCharges);
