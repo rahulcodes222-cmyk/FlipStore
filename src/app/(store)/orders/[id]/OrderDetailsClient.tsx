@@ -20,10 +20,8 @@ import {
   CreditCard,
   Download,
   AlertTriangle,
-  Play,
   HelpCircle,
   Star,
-  RefreshCw,
   Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -177,33 +175,6 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
     })();
     return () => { cancelled = true; };
   }, [order, isReviewEligibleOrder, user]);
-
-  // ── Simulator: update status ────────────────────────────────────────────────
-  const handleSimulateStatus = async (targetStatus: OrderStatus) => {
-    if (!order) return;
-    try {
-      const updated = await orderService.updateOrderStatus(order.id, targetStatus);
-      setOrder(updated);
-      toast({
-        type: "info",
-        title: "Tracking Updated",
-        message: `Order status advanced to "${targetStatus}".`,
-      });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to update tracking simulation";
-      toast({ type: "error", message: msg });
-    }
-  };
-
-  const handleAdvanceNextStage = () => {
-    if (!order) return;
-    const currentIdx = STAGE_ORDER[order.orderStatus];
-    if (currentIdx >= 0 && currentIdx < TIMELINE_STAGES.length - 1) {
-      handleSimulateStatus(TIMELINE_STAGES[currentIdx + 1].status);
-    } else {
-      toast({ type: "info", message: "Order is already at its final stage." });
-    }
-  };
 
   // ── Cancellation ────────────────────────────────────────────────────────────
   const handleConfirmCancel = async () => {
@@ -588,52 +559,7 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
             </div>
           )}
 
-          {/* ── SIMULATE TRACKING CONTROLS ──────────────────────────────────── */}
-          <div className="mt-6 pt-4 border-t border-[#F0F0F0] bg-gray-50/70 p-3 rounded-xs">
-            <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-[#212121]">
-                <Play size={13} className="text-[#2874F0]" />
-                <span>Simulate Order Tracking State:</span>
-              </div>
-              <button
-                type="button"
-                onClick={handleAdvanceNextStage}
-                className="text-xs font-bold text-[#2874F0] hover:underline cursor-pointer"
-              >
-                Advance Next Stage ⏩
-              </button>
-            </div>
 
-            <div className="flex flex-wrap gap-1.5">
-              {TIMELINE_STAGES.map((s) => (
-                <button
-                  key={s.status}
-                  type="button"
-                  onClick={() => handleSimulateStatus(s.status)}
-                  className={cn(
-                    "px-2.5 py-1 text-[11px] font-semibold rounded-xs border cursor-pointer transition-colors",
-                    order.orderStatus === s.status
-                      ? "bg-[#2874F0] text-white border-[#2874F0]"
-                      : "bg-white text-gray-700 border-[#E0E0E0] hover:bg-gray-100"
-                  )}
-                >
-                  {s.title}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => handleSimulateStatus("CANCELLED")}
-                className={cn(
-                  "px-2.5 py-1 text-[11px] font-semibold rounded-xs border cursor-pointer transition-colors",
-                  order.orderStatus === "CANCELLED"
-                    ? "bg-red-600 text-white border-red-600"
-                    : "bg-white text-red-600 border-red-200 hover:bg-red-50"
-                )}
-              >
-                Cancelled
-              </button>
-            </div>
-          </div>
         </div>
 
         {/* ── Products & Address & Payment Details ──────────────────────────── */}
