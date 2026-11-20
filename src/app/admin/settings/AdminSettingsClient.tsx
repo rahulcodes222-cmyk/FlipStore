@@ -151,7 +151,7 @@ export function AdminSettingsClient() {
             </h2>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">
                 Standard GST / Tax Rate (%)
@@ -170,6 +170,24 @@ export function AdminSettingsClient() {
 
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1">
+                Standard Delivery Charge (₹)
+              </label>
+              <Input
+                type="number"
+                min={0}
+                value={Number.isFinite(Number(settings.standardDeliveryCharge)) ? Number(settings.standardDeliveryCharge) : 40}
+                onChange={(e) =>
+                  setSettings({ ...settings, standardDeliveryCharge: Number(e.target.value) })
+                }
+                className="h-9 text-xs font-bold"
+              />
+              <p className="text-[10px] text-gray-400 mt-1">
+                Used as fallback when Shiprocket rate is unavailable.
+              </p>
+            </div>
+
+            <div className="sm:col-span-2">
+              <label className="block text-xs font-semibold text-gray-700 mb-1">
                 Free Delivery Basket Threshold (₹)
               </label>
               <Input
@@ -179,7 +197,7 @@ export function AdminSettingsClient() {
                 onChange={(e) =>
                   setSettings({ ...settings, freeDeliveryThreshold: Number(e.target.value) })
                 }
-                className="h-9 text-xs font-bold"
+                className="h-9 text-xs font-bold max-w-xs"
               />
               <p className="text-[10px] text-gray-400 mt-1">
                 Orders with subtotal above this qualify for free shipping.

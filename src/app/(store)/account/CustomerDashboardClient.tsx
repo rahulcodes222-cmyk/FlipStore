@@ -67,7 +67,7 @@ export function CustomerDashboardClient() {
 
   const { user, isAuthenticated, updateUser, logout } = useAuthStore();
   const { items: wishlistItems, removeItem: removeWishlistItem } = useWishlistStore();
-  const { addItem: addToCart } = useCartStore();
+  const { addItem: addToCart, items: cartItems } = useCartStore();
 
   // Active Tab from query param or default to 'profile'
   const initialTab = (searchParams.get("tab") as TabKey) || "profile";
@@ -110,6 +110,7 @@ export function CustomerDashboardClient() {
   });
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+  const [defaultDeliveryCharge, setDefaultDeliveryCharge] = useState<number | null>(null);
   const [addrName, setAddrName] = useState("");
   const [addrPhone, setAddrPhone] = useState("");
   const [addrHouseNo, setAddrHouseNo] = useState("");
@@ -168,6 +169,7 @@ export function CustomerDashboardClient() {
       }
     }
     loadAddresses();
+    void fetchDefaultDeliveryCharge();
     return () => {
       isCancelled = true;
     };
@@ -320,9 +322,42 @@ export function CustomerDashboardClient() {
       const defaultAddr = updated.find((a) => a.isDefault);
       updateUser({ addresses: updated, defaultAddressId: defaultAddr?.id });
       toast({ type: "success", message: "Default delivery address updated" });
+      void fetchDefaultDeliveryCharge();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to set default address. Please try again.";
       toast({ type: "error", message });
+    }
+  };
+
+  const fetchDefaultDeliveryCharge = async () => {
+    try {
+      const defaultAddr = addresses.find((a) => a.isDefault);
+      if (!defaultAddr || !/^\d{6}$/.test(String(defaultAddr.pincode || '').replace(/\D/g, ''))) {
+        setDefaultDeliveryCharge(null);
+        return;
+      }
+      if (cartItems.length === 0) {
+        setDefaultDeliveryCharge(null);
+        return;
+      }
+      const summary = await orderService.getCheckoutSummary({
+        shippingAddressId: defaultAddr.id,
+        shippingAddress: {
+          pincode: defaultAddr.pincode,
+          city: defaultAddr.city,
+          state: defaultAddr.state,
+          locality: defaultAddr.locality,
+          street: defaultAddr.street,
+        },
+        paymentMethod: "COD",
+        items: cartItems.map((i) => ({
+          productId: i.productId,
+          quantity: i.quantity,
+        })),
+      });
+      setDefaultDeliveryCharge(Number((summary as any)?.summary?.deliveryCharges || 0));
+    } catch {
+      setDefaultDeliveryCharge(null);
     }
   };
 
@@ -913,6 +948,20 @@ export function CustomerDashboardClient() {
                     <Plus size={14} /> Add Address
                   </Button>
                 </div>
+
+                {defaultDeliveryCharge !== null && cartItems.length > 0 && (
+                  <div className="p-3 bg-blue-50 border border-blue-100 rounded-xs flex items-center gap-2 text-xs">
+                    <MapPin size={13} className="text-[#2874F0] shrink-0" />
+                    <div>
+                      <p className="font-bold text-[#212121] text-[10px] uppercase tracking-wider mb-0.5">
+                        Delivery Charge for Default Address
+                      </p>
+                      <p className="font-bold text-[#212121]">
+                        {defaultDeliveryCharge === 0 ? "FREE Delivery" : `₹${defaultDeliveryCharge.toLocaleString("en-IN")}`}
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 <div className="space-y-3">
                   {addresses.map((addr) => (
