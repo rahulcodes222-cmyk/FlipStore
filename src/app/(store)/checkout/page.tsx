@@ -19,21 +19,17 @@ import {
   Check,
   ShieldCheck,
   MapPin,
-  CreditCard,
   ShoppingBag,
   Plus,
   CheckCircle2,
   LogOut,
   Edit2,
   Trash2,
-  QrCode,
-  Smartphone,
-  Building2,
-  Banknote,
   AlertTriangle,
   ArrowRight,
   Package,
   Calendar,
+  Wallet,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -174,13 +170,6 @@ export default function CheckoutPage() {
   const [addressErrors, setAddressErrors] = useState<Record<string, string>>({});
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("UPI");
-  const [upiMethod, setUpiMethod] = useState<"id" | "qr">("id");
-  const [upiId, setUpiId] = useState("");
-  const [cardNumber, setCardNumber] = useState("");
-  const [cardHolder, setCardHolder] = useState("");
-  const [cardExpiry, setCardExpiry] = useState("");
-  const [cardCvv, setCardCvv] = useState("");
-  const [selectedBank, setSelectedBank] = useState("HDFC");
   const [codCaptcha, setCodCaptcha] = useState("");
   const [expectedCaptcha] = useState("7482");
   const [simulateFailure, setSimulateFailure] = useState(false);
@@ -633,7 +622,14 @@ export default function CheckoutPage() {
             redirectTarget: '_modal',
           });
           if (cfResult?.error) {
-            throw new Error(cfResult.error?.message || "Payment cancelled. Order remains pending payment.");
+            throw new Error(cfResult.error?.message || "Payment cancelled");
+          }
+          if (cfResult?.redirect) {
+            // redirected flow not expected in modal mode; treat as incomplete
+            throw new Error("Payment not completed");
+          }
+          if (cfResult?.paymentDetails?.paymentMessage && /cancel|close|dismiss|drop/i.test(String(cfResult.paymentDetails.paymentMessage))) {
+            throw new Error("Payment cancelled");
           }
           const verified = await verifyPayment({
             paymentId: payInit.paymentId,
@@ -641,8 +637,10 @@ export default function CheckoutPage() {
             gatewayOrderId,
             cashfreeOrderId: gatewayOrderId,
           } as any);
-          if (!(verified as any)?.verified) throw new Error('Payment not confirmed by gateway.');
+          if (!(verified as any)?.verified) throw new Error('Payment not completed.');
         }
+      } else if (gateway === 'CASHFREE') {
+        throw new Error("Cashfree checkout could not be opened. Please try again.");
       } else if (gateway !== 'CASHFREE' && !payInit.sandbox && payInit.keyId && gatewayOrderId) {
         const loaded = await loadRazorpayScript();
         if (loaded && window.Razorpay) {
@@ -683,7 +681,9 @@ export default function CheckoutPage() {
         }
       }
       if (!usedRealGateway) {
-        // Sandbox-ready fallback (no keys/SDK unavailable) — no real money charged.
+        if (gateway === 'CASHFREE') {
+          throw new Error("Cashfree checkout could not be opened. Please try again.");
+        }
         await completeSandbox();
         const gw = String((payInit as any).gateway || "RAZORPAY").toUpperCase();
         toast({
@@ -702,9 +702,15 @@ export default function CheckoutPage() {
       toast({ type: "success", title: "Payment verified", message: `Order ID: ${created.orderNumber}` });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Payment/order failed. Please try again.";
-      setCurrentStep((s) => (s < 4 ? 4 : s));
+      if (paymentMethod === "COD") {
+        setCurrentStep(4);
+      } else {
+        setCurrentStep(3);
+      }
       if (/authentication required|unauthor|session expired|token/i.test(msg)) {
         setPaymentError("Session expired. Please log out and log in again, then retry.");
+      } else if (/cancel|closed|dismiss|dropped|user dropped/i.test(msg)) {
+        setPaymentError(null);
       } else {
         setPaymentError(msg);
       }
@@ -734,7 +740,7 @@ export default function CheckoutPage() {
                 <p className="text-[#878787] mt-1">Phone: {confirmedOrder.shippingAddress.phone}</p>
               </div>
               <div className="p-3 bg-gray-50 rounded-xs">
-                <div className="flex items-center gap-2 font-bold text-[#212121] mb-1"><CreditCard size={14} className="text-[#2874F0]" /><span>Payment Details</span></div>
+                <div className="flex items-center gap-2 font-bold text-[#212121] mb-1"><Wallet size={14} className="text-[#2874F0]" /><span>Payment Details</span></div>
                 <p className="text-[#555]">Method: <strong className="text-[#212121]">{confirmedOrder.paymentMethod}</strong></p>
                 <p className="text-[#555] mt-0.5">Status: <span className={cn("font-bold", confirmedOrder.paymentStatus === "PAID" ? "text-[#388E3C]" : "text-amber-600")}>{confirmedOrder.paymentStatus}</span></p>
                 <p className="text-[#212121] font-bold text-sm mt-2">Total: ₹{confirmedOrder.pricing.totalAmount.toLocaleString("en-IN")}</p>
@@ -870,22 +876,39 @@ export default function CheckoutPage() {
                       </div>
                     ))}
                   </div>
-                  <Button
-                    variant="buyNow"
-                    onClick={() => {
-                      setPaymentError(null);
-                      if (paymentMethod === "COD") {
-                        setCurrentStep(4);
-                      } else {
+                  {paymentError && currentStep === 3 && (
+                    <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xs p-2 flex items-start gap-2">
+                      <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+                      <span>{paymentError}</span>
+                    </div>
+                  )}
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                    <Button
+                      variant="buyNow"
+                      onClick={() => {
+                        setPaymentError(null);
+                        if (paymentMethod === "COD") setPaymentMethod("UPI");
                         void handlePlaceOrder();
-                      }
-                    }}
-                    disabled={isProcessingPayment || summaryLoading}
-                    className="font-bold text-xs flex items-center gap-1"
-                  >
-                    <span>{isProcessingPayment ? "Processing..." : "Continue to Payment"}</span>
-                    {!isProcessingPayment && <ArrowRight size={14} />}
-                  </Button>
+                      }}
+                      disabled={isProcessingPayment || summaryLoading}
+                      className="font-bold text-xs flex items-center gap-1"
+                    >
+                      <span>{isProcessingPayment ? "Processing..." : "Continue to Payment"}</span>
+                      {!isProcessingPayment && <ArrowRight size={14} />}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setPaymentError(null);
+                        setPaymentMethod("COD");
+                        setCurrentStep(4);
+                      }}
+                      disabled={isProcessingPayment}
+                      className="font-bold text-xs"
+                    >
+                      Cash on Delivery
+                    </Button>
+                  </div>
                 </div>
               ) : currentStep > 3 ? (<div className="p-3 px-4 text-xs text-[#555] bg-white">{items.length} {items.length === 1 ? "item" : "items"} ready for dispatch</div>) : null}
             </div>
@@ -894,67 +917,43 @@ export default function CheckoutPage() {
               {renderStepHeader(4, "Payment Options")}
               {currentStep === 4 && (
                 <div className="p-4 sm:p-5 space-y-4">
-                  <div className="space-y-2">
-                    {[
-                      { id: "UPI" as PaymentMethod, label: "UPI", icon: Smartphone, desc: "Pay using UPI ID or QR" },
-                      { id: "CARD" as PaymentMethod, label: "Credit / Debit Card", icon: CreditCard, desc: "Visa, Mastercard, RuPay" },
-                      { id: "NET_BANKING" as PaymentMethod, label: "Net Banking", icon: Building2, desc: "Pay from your bank account" },
-                      { id: "COD" as PaymentMethod, label: "Cash on Delivery", icon: Banknote, desc: "Pay when you receive" },
-                    ].map((opt) => (
-                      <label key={opt.id} className={cn("flex items-start gap-3 p-3 border rounded-sm cursor-pointer", paymentMethod === opt.id ? "border-[#2874F0] bg-blue-50/30" : "border-[#E0E0E0] hover:border-gray-300")}>
-                        <input type="radio" name="payment" checked={paymentMethod === opt.id} onChange={() => { setPaymentMethod(opt.id); setPaymentError(null); }} className="mt-1" />
-                        <opt.icon size={18} className="text-[#2874F0] mt-0.5" />
-                        <div><p className="text-sm font-semibold text-[#212121]">{opt.label}</p><p className="text-xs text-[#878787]">{opt.desc}</p></div>
-                      </label>
-                    ))}
-                  </div>
-
-                  {paymentMethod === "UPI" && (
-                    <div className="border border-[#E0E0E0] rounded-sm p-3 space-y-3 bg-[#FAFAFA]">
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => setUpiMethod("id")} className={cn("px-3 py-1.5 text-xs font-semibold rounded-xs border", upiMethod === "id" ? "border-[#2874F0] text-[#2874F0] bg-blue-50" : "border-gray-300")}>UPI ID</button>
-                        <button type="button" onClick={() => setUpiMethod("qr")} className={cn("px-3 py-1.5 text-xs font-semibold rounded-xs border", upiMethod === "qr" ? "border-[#2874F0] text-[#2874F0] bg-blue-50" : "border-gray-300")}>QR Code</button>
+                  {paymentMethod === "COD" ? (
+                    <>
+                      <div className="border border-[#E0E0E0] rounded-sm p-3 space-y-3 bg-[#FAFAFA]">
+                        <p className="text-xs font-semibold text-[#212121]">Cash on Delivery</p>
+                        <p className="text-xs text-[#555]">Enter the security code to confirm Cash on Delivery.</p>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <div className="px-3 py-2 bg-white border border-gray-300 rounded-xs font-mono font-bold tracking-widest text-[#212121] select-none">{expectedCaptcha}</div>
+                          <div className="min-w-[160px] flex-1"><InputField label="Security Code" value={codCaptcha} onChange={(e) => setCodCaptcha(e.target.value)} /></div>
+                          <button
+                            type="button"
+                            onClick={() => { setCodCaptcha(expectedCaptcha); setSimulateFailure(false); setPaymentError(null); }}
+                            className="h-10 px-3 text-xs font-semibold border border-[#388E3C] text-[#388E3C] bg-white rounded-xs hover:bg-green-50 cursor-pointer"
+                          >
+                            Use code &amp; confirm COD
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-[#388E3C]">Click to auto-fill code for successful COD, then place order.</p>
                       </div>
-                      {upiMethod === "id" ? <InputField label="UPI ID" placeholder="yourname@bank" value={upiId} onChange={(e) => setUpiId(e.target.value)} /> : <div className="text-xs text-[#555] flex items-center gap-2 p-3 bg-white border border-dashed border-gray-300 rounded-xs"><QrCode size={18} /><span>Scan QR with your UPI app at payment time (simulated).</span></div>}
-                    </div>
-                  )}
-
-                  {paymentMethod === "CARD" && (
-                    <div className="border border-[#E0E0E0] rounded-sm p-3 space-y-3 bg-[#FAFAFA]">
-                      <InputField label="Card Number" placeholder="1234 5678 9012 3456" value={cardNumber} onChange={(e) => setCardNumber(e.target.value)} />
-                      <InputField label="Card Holder Name" placeholder="Name on card" value={cardHolder} onChange={(e) => setCardHolder(e.target.value)} />
-                      <div className="grid grid-cols-2 gap-3"><InputField label="Expiry (MM/YY)" placeholder="MM/YY" value={cardExpiry} onChange={(e) => setCardExpiry(e.target.value)} /><InputField label="CVV" placeholder="123" value={cardCvv} onChange={(e) => setCardCvv(e.target.value)} type="password" /></div>
-                    </div>
-                  )}
-
-                  {paymentMethod === "NET_BANKING" && (
-                    <div className="border border-[#E0E0E0] rounded-sm p-3 space-y-3 bg-[#FAFAFA]">
-                      <label className="block text-xs font-semibold text-[#555] mb-1">Select Bank</label>
-                      <select value={selectedBank} onChange={(e) => setSelectedBank(e.target.value)} className="w-full h-10 border border-gray-300 rounded-xs px-3 text-sm bg-white">{POPULAR_BANKS.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</select>
-                    </div>
-                  )}
-
-                  {paymentMethod === "COD" && (
-                    <div className="border border-[#E0E0E0] rounded-sm p-3 space-y-3 bg-[#FAFAFA]">
-                      <p className="text-xs text-[#555]">Enter the security code to confirm Cash on Delivery.</p>
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <div className="px-3 py-2 bg-white border border-gray-300 rounded-xs font-mono font-bold tracking-widest text-[#212121] select-none">{expectedCaptcha}</div>
-                        <div className="min-w-[160px] flex-1"><InputField label="Security Code" value={codCaptcha} onChange={(e) => setCodCaptcha(e.target.value)} /></div>
-                        <button
-                          type="button"
-                          onClick={() => { setCodCaptcha(expectedCaptcha); setSimulateFailure(false); setPaymentError(null); }}
-                          className="h-10 px-3 text-xs font-semibold border border-[#388E3C] text-[#388E3C] bg-white rounded-xs hover:bg-green-50 cursor-pointer"
-                        >
-                          Use code &amp; confirm COD
-                        </button>
+                      {paymentError && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xs p-2 flex items-start gap-2"><AlertTriangle size={14} className="mt-0.5 shrink-0" /><span>{paymentError}</span></div>}
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button variant="buyNow" onClick={handlePlaceOrder} disabled={isProcessingPayment || summaryLoading} className="font-bold text-xs w-full sm:w-auto">{isProcessingPayment ? "Processing..." : `Place Order · ₹${currentSummary.summary.totalAmount.toLocaleString("en-IN")}`}</Button>
+                        <Button variant="outline" onClick={() => { setPaymentError(null); setPaymentMethod("UPI"); setCurrentStep(3); }} disabled={isProcessingPayment} className="font-bold text-xs">Pay Online with Cashfree</Button>
                       </div>
-                      <p className="text-[11px] text-[#388E3C]">Click to auto-fill code for successful COD, then place order.</p>
-                    </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="border border-[#E0E0E0] rounded-sm p-4 bg-[#FAFAFA] space-y-2">
+                        <p className="text-sm font-semibold text-[#212121]">Pay securely with Cashfree</p>
+                        <p className="text-xs text-[#878787]">You will complete payment in the Cashfree checkout popup (UPI, cards, net banking, wallets and more).</p>
+                      </div>
+                      {paymentError && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xs p-2 flex items-start gap-2"><AlertTriangle size={14} className="mt-0.5 shrink-0" /><span>{paymentError}</span></div>}
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <Button variant="buyNow" onClick={() => { setPaymentError(null); void handlePlaceOrder(); }} disabled={isProcessingPayment || summaryLoading} className="font-bold text-xs w-full sm:w-auto">{isProcessingPayment ? "Processing..." : "Continue to Payment"}</Button>
+                        <Button variant="outline" onClick={() => { setPaymentError(null); setPaymentMethod("COD"); }} disabled={isProcessingPayment} className="font-bold text-xs">Cash on Delivery</Button>
+                      </div>
+                    </>
                   )}
-
-                  <label className="flex items-center gap-2 text-xs text-[#555] cursor-pointer"><input type="checkbox" checked={simulateFailure} onChange={(e) => setSimulateFailure(e.target.checked)} />Simulate payment failure (testing)</label>
-                  {paymentError && <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-xs p-2 flex items-start gap-2"><AlertTriangle size={14} className="mt-0.5 shrink-0" /><span>{paymentError}</span></div>}
-                  <Button variant="buyNow" onClick={handlePlaceOrder} disabled={isProcessingPayment || summaryLoading} className="font-bold text-xs w-full sm:w-auto">{isProcessingPayment ? "Processing..." : `Place Order · ₹${currentSummary.summary.totalAmount.toLocaleString("en-IN")}`}</Button>
                 </div>
               )}
             </div>
