@@ -913,9 +913,9 @@ export default function CheckoutPage() {
               ) : currentStep > 3 ? (<div className="p-3 px-4 text-xs text-[#555] bg-white">{items.length} {items.length === 1 ? "item" : "items"} ready for dispatch</div>) : null}
             </div>
 
-            <div className="bg-white border border-[#E0E0E0] rounded-sm shadow-2xs overflow-hidden">
-              {renderStepHeader(4, "Payment Options")}
-              {currentStep === 4 && (
+
+            {currentStep === 4 && (
+              <div className="bg-white border border-[#E0E0E0] rounded-sm shadow-2xs overflow-hidden">
                 <div className="p-4 sm:p-5 space-y-4">
                   {paymentMethod === "COD" ? (
                     <>
@@ -955,8 +955,8 @@ export default function CheckoutPage() {
                     </>
                   )}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           <aside className="bg-white border border-[#E0E0E0] rounded-sm shadow-2xs overflow-hidden lg:sticky lg:top-4">
