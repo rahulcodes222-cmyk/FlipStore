@@ -22,11 +22,9 @@ import type { IProductDocument } from '@/backend/types';
 import { USER_ROLES } from '@/backend/constants/roles';
 import { refundOrderPayment } from '@/backend/services/paymentService';
 import { ensureSubOrderCommissionLedger, markSubOrderLedgerAvailable, applyRefundReversalForSubOrder } from '@/backend/services/vendorFinanceService';
-import { createShiprocketShipmentForSubOrder, isShiprocketConfigured } from '@/backend/services/shiprocketService';
+import { createShiprocketShipmentForSubOrder, isShiprocketConfigured, getShiprocketDeliveryRate } from '@/backend/services/shiprocketService';
+import { getDeliverySettings } from '@/backend/services/platformSettingsService';
 import { logger } from '@/backend/utils/logger';
-
-const SHIPPING_CHARGE = 40;
-const FREE_SHIPPING_THRESHOLD = 499;
 
 const ORDER_FLOW = ['PENDING', 'PLACED', 'CONFIRMED', 'PROCESSING', 'PACKED', 'SHIPPED', 'OUT_FOR_DELIVERY', 'DELIVERED'] as const;
 type OrderStatusValue = typeof ORDER_FLOW[number] | 'CANCELLED' | 'RETURN_REQUESTED' | 'RETURNED' | 'REFUNDED';
@@ -280,6 +278,46 @@ async function resolveApplicableCoupon(
   return validateCouponRules(fallback, orderSubtotal);
 }
 
+async function resolveCheckoutDeliveryCharge(params: {
+  subtotal: number;
+  totalQuantity: number;
+  destinationPincode?: string;
+  paymentMethod?: string;
+}): Promise<{ deliveryCharges: number; freeDeliveryThreshold: number; standardDeliveryCharge: number; source: 'free' | 'shiprocket' | 'standard' | 'fallback' }> {
+  const settings = await getDeliverySettings().catch(() => ({ standardDeliveryCharge: 40, freeDeliveryAboveAmount: 499 }));
+  const threshold = Math.max(0, Number(settings.freeDeliveryAboveAmount ?? 499));
+  const standard = Math.max(0, Number(settings.standardDeliveryCharge ?? 40));
+  const subtotal = round2(Math.max(0, Number(params.subtotal || 0)));
+  if (subtotal <= 0) return { deliveryCharges: 0, freeDeliveryThreshold: threshold, standardDeliveryCharge: standard, source: 'fallback' };
+  if (threshold > 0 && subtotal >= threshold) {
+    return { deliveryCharges: 0, freeDeliveryThreshold: threshold, standardDeliveryCharge: standard, source: 'free' };
+  }
+
+  const destinationPincode = String(params.destinationPincode || '').replace(/\D/g, '').slice(0, 6);
+  const weightKg = Math.max(0.1, Number(process.env.SHIPROCKET_DEFAULT_WEIGHT || 0.5) * Math.max(1, Number(params.totalQuantity || 1)));
+  let shiprocketCharge: number | null = null;
+  if (/^\d{6}$/.test(destinationPincode)) {
+    try {
+      const rate = await getShiprocketDeliveryRate({
+        deliveryPincode: destinationPincode,
+        weightKg,
+        cod: String(params.paymentMethod || '').toUpperCase() === 'COD',
+        declaredValue: subtotal,
+      });
+      if (rate && Number.isFinite(Number(rate.charge)) && Number(rate.charge) >= 0) {
+        shiprocketCharge = round2(Number(rate.charge));
+      }
+    } catch (e) {
+      logger.warn('Shiprocket delivery rate resolution failed, using configured fallback', { error: (e as Error)?.message });
+    }
+  }
+
+  if (shiprocketCharge != null) {
+    return { deliveryCharges: shiprocketCharge, freeDeliveryThreshold: threshold, standardDeliveryCharge: standard, source: 'shiprocket' };
+  }
+  return { deliveryCharges: round2(standard), freeDeliveryThreshold: threshold, standardDeliveryCharge: standard, source: 'standard' };
+}
+
 async function buildOrderItemsFromInput(
   cartItemsInput: Array<{ productId: string; variantId?: string; quantity: number; selectedVariants?: Record<string, string> }>,
   session?: mongoose.ClientSession | null,
@@ -299,6 +337,7 @@ async function buildOrderItemsFromInput(
 
   const orderItems: any[] = [];
   let totalMrp = 0; let subtotal = 0;
+  let totalQuantity = 0;
 
   for (const cartItem of normalized) {
     const product = productMap.get(cartItem.productId);
@@ -310,6 +349,7 @@ async function buildOrderItemsFromInput(
     const itemMrp = pricing.mrp * cartItem.quantity;
     const itemSubtotal = pricing.price * cartItem.quantity;
     totalMrp += itemMrp; subtotal += itemSubtotal;
+    totalQuantity += cartItem.quantity;
 
     orderItems.push({
       id: `${toId(product._id)}-${cartItem.variantId || 'default'}`,
@@ -326,10 +366,8 @@ async function buildOrderItemsFromInput(
   }
 
   const discount = Math.max(0, totalMrp - subtotal);
-  const deliveryCharges = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_CHARGE;
-  const totalAmount = round2(subtotal + deliveryCharges);
 
-  return { orderItems, totalMrp, subtotal, discount, deliveryCharges, totalAmount };
+  return { orderItems, totalMrp, subtotal, discount, totalQuantity };
 }
 
 export async function getCheckoutSummary(userId: string, input: CheckoutSummaryInput) {
@@ -371,8 +409,14 @@ export async function getCheckoutSummary(userId: string, input: CheckoutSummaryI
   }
 
   const discount = Math.max(0, totalMrp - subtotal);
-  const deliveryCharges = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING_CHARGE;
-  const totalAmount = subtotal + deliveryCharges;
+  const delivery = await resolveCheckoutDeliveryCharge({
+    subtotal,
+    totalQuantity,
+    destinationPincode: String((address as any)?.pincode || ''),
+    paymentMethod: input.paymentMethod,
+  });
+  const deliveryCharges = delivery.deliveryCharges;
+  const totalAmount = round2(subtotal + deliveryCharges);
 
   return {
     items,
@@ -416,7 +460,14 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
       throw new Error('Cart is empty.');
     }
 
-    let { orderItems, totalMrp, subtotal, discount, deliveryCharges } = built;
+    let { orderItems, totalMrp, subtotal, discount, totalQuantity } = built;
+    const delivery = await resolveCheckoutDeliveryCharge({
+      subtotal,
+      totalQuantity: totalQuantity || (orderItems || []).reduce((s: number, i: any) => s + Number(i.quantity || 0), 0),
+      destinationPincode: String((address as any)?.pincode || ''),
+      paymentMethod: input.paymentMethod,
+    });
+    const deliveryCharges = round2(delivery.deliveryCharges);
     const appliedCouponResolved = await resolveApplicableCoupon((input as any).couponCode, subtotal, session);
     const couponDiscount = round2(Math.min(Math.max(0, Number(appliedCouponResolved?.couponDiscount || 0)), subtotal));
     const totalAmount = round2(Math.max(0, subtotal - couponDiscount + deliveryCharges));
@@ -442,7 +493,7 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
       const subMrp = items.reduce((s, i) => s + i.mrp * i.quantity, 0);
       const subSubtotal = items.reduce((s, i) => s + i.price * i.quantity, 0);
       const subDiscount = Math.max(0, subMrp - subSubtotal);
-      const subDelivery = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : round2(deliveryCharges / sellerGroups.size);
+      const subDelivery = deliveryCharges <= 0 ? 0 : round2(deliveryCharges / sellerGroups.size);
       const subTotal = round2(subSubtotal + subDelivery);
       const commissionPercentage = 5;
       const commissionAmount = round2(subSubtotal * (commissionPercentage / 100));

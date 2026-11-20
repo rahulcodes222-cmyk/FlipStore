@@ -70,6 +70,7 @@ export interface StoreSettings {
   currency: string;
   taxPercentage: number;
   freeDeliveryThreshold: number;
+  standardDeliveryCharge: number;
   maintenanceMode: boolean;
   announcementBanner: string;
 }
@@ -80,7 +81,8 @@ const DEFAULT_SETTINGS: StoreSettings = {
   supportPhone: "+91 1800 208 9898",
   currency: "INR",
   taxPercentage: 18,
-  freeDeliveryThreshold: 500,
+  freeDeliveryThreshold: 499,
+  standardDeliveryCharge: 40,
   maintenanceMode: false,
   announcementBanner: "Big Billion Days are Live! Enjoy up to 80% off across electronics and fashion.",
 };

@@ -23,3 +23,4 @@ export { default as InventoryMovementModel } from './InventoryMovement';
 export { default as FinancialLedgerModel } from './FinancialLedger';
 export { default as CommissionConfigModel } from './CommissionConfig';
 export { default as SupportTicketModel } from './SupportTicket';
+export { default as PlatformSettingModel } from './PlatformSetting';

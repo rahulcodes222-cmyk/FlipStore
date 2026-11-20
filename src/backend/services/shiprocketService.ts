@@ -231,3 +231,97 @@ export async function trackShiprocketByAwb(awbCode: string): Promise<any | null>
     return null;
   }
 }
+
+function pickNumber(...vals: any[]): number | null {
+  for (const v of vals) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return null;
+}
+
+function extractCourierFreight(c: any): number | null {
+  return pickNumber(
+    c?.freight_charge,
+    c?.total_charge,
+    c?.rate,
+    c?.shipping_charge,
+    c?.delivery_charge,
+    c?.charge,
+    c?.price,
+    c?.cost,
+  );
+}
+
+export async function getShiprocketDeliveryRate(params: {
+  deliveryPincode: string;
+  pickupPincode?: string;
+  weightKg?: number;
+  cod?: boolean;
+  declaredValue?: number;
+}): Promise<{ charge: number; courierName?: string; courierCompanyId?: string | number; estimatedDays?: string | number; raw?: any } | null> {
+  if (!isShiprocketConfigured()) return null;
+  const deliveryPincode = str(params.deliveryPincode, '').replace(/\D/g, '').slice(0, 6);
+  if (!/^\d{6}$/.test(deliveryPincode)) return null;
+
+  const pickupPincode = str(params.pickupPincode || process.env.SHIPROCKET_PICKUP_PINCODE || process.env.SHIPROCKET_PICKUP_POSTCODE || process.env.NEXT_PUBLIC_SHIPROCKET_PICKUP_PINCODE, '').replace(/\D/g, '').slice(0, 6);
+  // If pickup pincode is unknown, serviceability/rate API is unreliable; skip to preserve safe fallback.
+  if (!/^\d{6}$/.test(pickupPincode)) {
+    logger.debug?.('Shiprocket rate skipped: pickup pincode not configured');
+    return null;
+  }
+
+  const weight = Math.max(0.1, num(params.weightKg, num(process.env.SHIPROCKET_DEFAULT_WEIGHT, 0.5)));
+  const length = Math.max(1, num(process.env.SHIPROCKET_DEFAULT_LENGTH, 10));
+  const breadth = Math.max(1, num(process.env.SHIPROCKET_DEFAULT_BREADTH, 10));
+  const height = Math.max(1, num(process.env.SHIPROCKET_DEFAULT_HEIGHT, 10));
+  const cod = params.cod ? 1 : 0;
+  const declared = Math.max(0, num(params.declaredValue, 0));
+
+  try {
+    const qs = new URLSearchParams({
+      pickup_postcode: pickupPincode,
+      delivery_postcode: deliveryPincode,
+      weight: String(weight),
+      cod: String(cod),
+      length: String(length),
+      breadth: String(breadth),
+      height: String(height),
+      ...(declared > 0 ? { declared_value: String(declared) } : {}),
+    });
+    const res = await shiprocketFetch(`/courier/serviceability/?${qs.toString()}`, { method: 'GET' });
+
+    const root = res?.data || res?.response?.data || res || {};
+    const companiesRaw = root?.available_courier_companies || root?.available_couriers || root?.courier_data || root?.couriers || root?.recommended_courier_company;
+    const companies = Array.isArray(companiesRaw) ? companiesRaw : companiesRaw && typeof companiesRaw === 'object' ? [companiesRaw] : [];
+
+    const candidates = companies
+      .map((c: any) => {
+        const charge = extractCourierFreight(c);
+        if (charge == null) return null;
+        return {
+          charge: Math.max(0, round2(charge)),
+          courierName: str(c?.courier_name || c?.name || c?.company_name, '') || undefined,
+          courierCompanyId: c?.courier_company_id ?? c?.id,
+          estimatedDays: c?.estimated_delivery_days || c?.etd || c?.edd || c?.delivery_days,
+          raw: c,
+        };
+      })
+      .filter(Boolean) as Array<{ charge: number; courierName?: string; courierCompanyId?: string | number; estimatedDays?: string | number; raw?: any }>;
+
+    if (!candidates.length) {
+      // Some responses expose a direct freight/rate at root
+      const rootCharge = extractCourierFreight(root);
+      if (rootCharge != null) return { charge: Math.max(0, round2(rootCharge)), raw: root };
+      return null;
+    }
+
+    candidates.sort((a, b) => a.charge - b.charge);
+    return candidates[0];
+  } catch (error) {
+    logger.warn('Shiprocket rate calculation failed', { deliveryPincode, pickupPincode, error: (error as Error)?.message });
+    return null;
+  }
+}
+
+function round2(n: number): number { return Math.round(n * 100) / 100; }
