@@ -236,7 +236,7 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
 
   const handleConfirmReturn = async () => {
     if (!order || !returnItemId) return;
-    const item = order.items.find((i) => i.id === returnItemId);
+    const item = order.items.find((i) => String((i as any).id || (i as any)._id || i.productId) === returnItemId);
     if (!item) return;
     setIsReturning(true);
     try {
@@ -695,7 +695,7 @@ export function OrderDetailsClient({ orderId }: { orderId: string }) {
                       {String(order?.orderStatus || "").toUpperCase() === "DELIVERED" && (
                         <button
                           type="button"
-                          onClick={() => openReturnModal(item.id)}
+                          onClick={() => openReturnModal(String((item as any).id || (item as any)._id || item.productId))}
                           className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-[#2874F0] hover:underline"
                         >
                           <Package size={13} />

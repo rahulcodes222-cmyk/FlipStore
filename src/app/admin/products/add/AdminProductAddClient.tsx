@@ -138,11 +138,10 @@ export function AdminProductAddClient() {
           General: {
             Brand: brandName,
             Model: title,
-            Warranty: "1 Year Domestic Warranty",
           },
         },
         tags: [selectedCat?.slug || "general", brandName.toLowerCase()],
-      });
+      } as any);
 
       router.push("/admin/products");
     } catch (err: any) {

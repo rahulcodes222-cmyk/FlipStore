@@ -40,6 +40,9 @@ export interface Product {
     storage?: string[];
     size?: string[];
   };
+  returnPolicy?: string;
+  returnWindowDays?: number;
+  isReturnable?: boolean;
   createdAt: string;
 }
 
@@ -148,6 +151,7 @@ export interface OrderShipment {
 }
 
 export interface OrderItem {
+  id?: string;
   productId: string;
   title: string;
   thumbnail: string;

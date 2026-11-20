@@ -133,8 +133,8 @@ export function AdminProductEditClient({ productId }: { productId: string }) {
         title: title.trim(),
         brandName: brandName.trim(),
         categoryId: selectedCat?.id || categoryId,
+        categoryName: selectedCat?.name || product?.categoryName,
         categorySlug: selectedCat?.slug || product?.categorySlug,
-        category: selectedCat?.name || product?.category || undefined,
         price,
         mrp: originalPrice,
         discountPercentage: discountPercent,
@@ -149,7 +149,7 @@ export function AdminProductEditClient({ productId }: { productId: string }) {
         images: [imagePreview, ...(product?.images.slice(1) || [])],
         description: description.trim(),
         highlights: highlightList,
-      });
+      } as any);
 
       router.push("/admin/products");
     } catch (err: any) {
