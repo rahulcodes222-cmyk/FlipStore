@@ -45,12 +45,6 @@ export default function SellerLoginPage() {
     );
   }
 
-  const DEMO_ACCOUNTS = [
-    { name: "Rahul Sharma — ElectroHub India", email: "rahul.sharma@electrohub.in" },
-    { name: "Priya Desai — Fashionista Boutique", email: "priya.desai@fashionista.in" },
-    { name: "Amit Verma — HomeLiving Essentials", email: "amit.verma@homeliving.in" },
-  ];
-
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -159,27 +153,8 @@ export default function SellerLoginPage() {
           </CardContent>
         </Card>
 
-        <div className="mt-6 border-t border-[#E0E0E0] pt-5">
-          <p className="text-center text-xs text-[#878787] mb-4">Demo accounts</p>
-          <div className="space-y-2">
-            {DEMO_ACCOUNTS.map((acc, i) => (
-              <button
-                key={i}
-                onClick={() => {
-                  setIdentifier(acc.email);
-                  setPassword("Seller@1234");
-                }}
-                className="w-full flex items-center justify-between px-3 py-2 rounded-sm border border-[#E0E0E0] bg-white text-sm text-[#212121] hover:bg-[#F1F3F6] transition-colors"
-              >
-                <span className="font-medium">{acc.name}</span>
-                <span className="text-[10px] text-[#878787]">Seller@1234</span>
-              </button>
-            ))}
-          </div>
-        </div>
-
         <p className="text-center text-xs text-[#878787] mt-6">
-          Don't have a seller account?{" "}
+          Don&apos;t have a seller account?{" "}
           <Link href="/seller/register" className="text-[#2874F0] font-medium hover:underline">
             Register as a seller
           </Link>

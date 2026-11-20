@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuthStore } from "@/store/useAuthStore";
-import { authService, DEMO_CREDENTIALS } from "@/services/authService";
+import { authService } from "@/services/authService";
 import { useToast } from "@/components/common/Toast";
 import { Button } from "@/components/ui/button";
 import { InputField } from "@/components/common/InputField";
@@ -17,7 +17,6 @@ import {
   EyeOff,
   ShieldCheck,
   ArrowLeft,
-  UserCheck,
   Lock,
   Mail,
   Sparkles,
@@ -85,7 +84,6 @@ export default function LoginPage() {
   const isHydrated = useHydration();
 
   const [showPassword, setShowPassword] = useState(false);
-  const [isQuickLoading, setIsQuickLoading] = useState<string | null>(null);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const googleBtnRef = useRef<HTMLDivElement>(null);
   const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
@@ -95,7 +93,6 @@ export default function LoginPage() {
   const {
     register,
     handleSubmit,
-    setValue,
     watch,
     formState: { errors, isSubmitting },
   } = useForm<LoginFormData>({
@@ -201,31 +198,6 @@ export default function LoginPage() {
         err instanceof Error ? err.message : "Login failed. Please try again.";
       toast({ type: "error", title: "Login Failed", message: msg });
     }
-  };
-
-  // ── Quick demo login ─────────────────────────────────────────────────────────
-  const handleDemoLogin = async (identifier: string, password: string) => {
-    setIsQuickLoading(identifier);
-    try {
-      const { user } = await authService.loginWithPassword(identifier, password);
-      setUser(user);
-      toast({
-        type: "success",
-        title: `Signed in as ${user.name}`,
-        message: "Demo login successful.",
-      });
-      router.push(redirectTo);
-    } catch {
-      toast({ type: "error", message: "Demo login failed. Please try manually." });
-    } finally {
-      setIsQuickLoading(null);
-    }
-  };
-
-  // ── Fill demo credentials helper ─────────────────────────────────────────────
-  const fillDemo = (identifier: string, password: string) => {
-    setValue("identifier", identifier, { shouldValidate: false });
-    setValue("password", password, { shouldValidate: false });
   };
 
   return (
@@ -387,52 +359,6 @@ export default function LoginPage() {
               )}
             </div>
           ) : null}
-
-
-          {/* ── Demo accounts ─────────────────────────────────────────────── */}
-          <div className="mt-6 pt-5 border-t border-[#F0F0F0]">
-            <p className="text-[11px] font-bold uppercase tracking-wider text-[#878787] mb-3">
-              1-Click Demo Accounts
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              {DEMO_CREDENTIALS.map((demo) => (
-                <button
-                  key={demo.identifier}
-                  type="button"
-                  onClick={() => handleDemoLogin(demo.identifier, demo.password)}
-                  disabled={isQuickLoading === demo.identifier || isSubmitting}
-                  className="relative p-2.5 border border-[#E0E0E0] hover:border-[#2874F0] rounded-xs text-left bg-gray-50 hover:bg-blue-50 transition-all cursor-pointer disabled:opacity-60 group"
-                >
-                  <div className="flex items-center gap-1 font-bold text-[11px] text-[#212121]">
-                    {demo.label === "Admin" ? (
-                      <ShieldCheck size={12} className="text-[#FB641B]" />
-                    ) : (
-                      <UserCheck size={12} className="text-[#2874F0]" />
-                    )}
-                    {demo.label}
-                  </div>
-                  <div className="text-[10px] text-[#878787] mt-0.5 truncate">
-                    {demo.name}
-                  </div>
-                  <div className="text-[10px] text-[#aaa] mt-0.5">
-                    pw: {demo.password}
-                  </div>
-                  {isQuickLoading === demo.identifier && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-white/80 rounded-xs">
-                      <div className="w-4 h-4 border-2 border-[#2874F0] border-t-transparent rounded-full animate-spin" />
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
-            <button
-              type="button"
-              onClick={() => fillDemo("aarav.mehta@example.com", "Demo@1234")}
-              className="mt-2 w-full text-center text-[11px] text-[#2874F0] hover:underline cursor-pointer"
-            >
-              Fill customer credentials instead →
-            </button>
-          </div>
 
           <div className="text-center text-xs text-[#878787] mt-5">
             New to FlipStore?{" "}

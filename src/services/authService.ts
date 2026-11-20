@@ -640,10 +640,9 @@ export async function changePassword(
   currentPassword: string,
   newPassword: string,
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/api/v1/auth/change-password`, {
+  const res = await fetchAuthApi(`${API_BASE}/api/v1/auth/change-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    credentials: "include",
     body: JSON.stringify({ currentPassword, newPassword }),
   });
 

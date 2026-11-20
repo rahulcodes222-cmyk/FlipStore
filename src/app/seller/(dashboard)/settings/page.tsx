@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useHydration } from "@/hooks/useHydration";
 import { useSellerStore } from "@/store/useSellerStore";
+import { authService } from "@/services/authService";
+import { useToast } from "@/components/common/Toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
@@ -23,8 +25,46 @@ export default function SellerSettingsPage() {
   const isHydrated = useHydration();
   const { seller } = useSellerStore();
   const router = useRouter();
+  const { toast } = useToast();
   const currentSeller = isHydrated ? seller : null;
   const [active, setActive] = useState("account");
+  const [passwordForm, setPasswordForm] = useState({
+    currentPassword: "",
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+
+  const handleUpdatePassword = async () => {
+    const currentPassword = passwordForm.currentPassword;
+    const newPassword = passwordForm.newPassword;
+    const confirmPassword = passwordForm.confirmPassword;
+
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      toast({ type: "error", message: "Please fill in current, new, and confirm password fields." });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast({ type: "error", message: "New password and confirm password do not match." });
+      return;
+    }
+    if (newPassword === currentPassword) {
+      toast({ type: "error", message: "New password must be different from current password." });
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    try {
+      await authService.changePassword(currentPassword, newPassword);
+      setPasswordForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      toast({ type: "success", title: "Password updated", message: "Your password has been changed successfully." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to update password.";
+      toast({ type: "error", title: "Password update failed", message });
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
@@ -97,18 +137,38 @@ export default function SellerSettingsPage() {
                 <div className="mt-4 space-y-3">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Current Password</label>
-                    <Input type="password" placeholder="••••••••" />
+                    <Input
+                      type="password"
+                      placeholder="••••••••"
+                      value={passwordForm.currentPassword}
+                      onChange={(e) => setPasswordForm((prev) => ({ ...prev, currentPassword: e.target.value }))}
+                      autoComplete="current-password"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">New Password</label>
-                    <Input type="password" placeholder="••••••••" />
+                    <Input
+                      type="password"
+                      placeholder="••••••••"
+                      value={passwordForm.newPassword}
+                      onChange={(e) => setPasswordForm((prev) => ({ ...prev, newPassword: e.target.value }))}
+                      autoComplete="new-password"
+                    />
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Confirm New Password</label>
-                    <Input type="password" placeholder="••••••••" />
+                    <Input
+                      type="password"
+                      placeholder="••••••••"
+                      value={passwordForm.confirmPassword}
+                      onChange={(e) => setPasswordForm((prev) => ({ ...prev, confirmPassword: e.target.value }))}
+                      autoComplete="new-password"
+                    />
                   </div>
                 </div>
-                <Button variant="primary">Update Password</Button>
+                <Button variant="primary" onClick={handleUpdatePassword} isLoading={isUpdatingPassword} disabled={isUpdatingPassword}>
+                  {isUpdatingPassword ? "Updating Password..." : "Update Password"}
+                </Button>
               </div>
             )}
             {active === "notifications" && (
