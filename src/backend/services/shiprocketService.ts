@@ -5,6 +5,7 @@
 
 import { env } from '@/backend/config/env';
 import { logger } from '@/backend/utils/logger';
+import { SellerStoreModel } from '@/backend/models';
 
 type ShiprocketTokenCache = { token: string; expiresAt: number } | null;
 let tokenCache: ShiprocketTokenCache = null;
@@ -103,6 +104,18 @@ export async function createShiprocketShipmentForSubOrder(params: {
   const { order, subOrder, shippingAddress, seller, vendor } = params;
 
   const pickupLocation = str(process.env.SHIPROCKET_PICKUP_LOCATION || vendor?.storeProfile?.storeName || vendor?.storeName || 'Primary', 'Primary');
+  let sellerPickupPincode = str(seller?.address?.pincode || vendor?.storeProfile?.address?.pincode || vendor?.address?.pincode, '');
+  // Fall back to SellerStoreModel lookup (where seller saves their pickup PIN)
+  if (!sellerPickupPincode || !/^\d{6}$/.test(sellerPickupPincode)) {
+    try {
+      const sellerId = subOrder?.sellerId || seller?._id || order?.customerId;
+      if (sellerId) {
+        const sellerStore = await SellerStoreModel.findOne({ sellerId }).select('address.pincode').lean().exec();
+        sellerPickupPincode = str((sellerStore as any)?.address?.pincode, '');
+      }
+    } catch {}
+  }
+  const pickupPostcode = (sellerPickupPincode && /^\d{6}$/.test(sellerPickupPincode)) ? sellerPickupPincode : str(process.env.SHIPROCKET_PICKUP_PINCODE || process.env.SHIPROCKET_PICKUP_POSTCODE || process.env.NEXT_PUBLIC_SHIPROCKET_PICKUP_PINCODE, '');
   const addr = shippingAddress || {};
   const billingName = str(addr.name || order?.customerName, 'Customer');
   const { first: bFirst, last: bLast } = splitName(billingName);
@@ -134,7 +147,8 @@ export async function createShiprocketShipmentForSubOrder(params: {
   const payload: any = {
     order_id: str(subOrder?.subOrderNumber || subOrder?._id || order?.orderNumber),
     order_date: `${yyyy}-${mm}-${dd} ${hh}:${mi}`,
-    pickup_location: pickupLocation,
+    pickup_location: pickupLocation + (pickupPostcode ? ` (${pickupPostcode})` : ''),
+    ...(pickupPostcode ? { pickup_postcode: pickupPostcode } : {}),
     channel_id: process.env.SHIPROCKET_CHANNEL_ID || '',
     comment: str(subOrder?.subOrderNumber ? `SubOrder ${subOrder.subOrderNumber}` : ''),
     billing_customer_name: bFirst,

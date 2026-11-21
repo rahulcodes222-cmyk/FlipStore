@@ -122,7 +122,7 @@ export function CategoryNavigation({
                   return (
                     <li key={cat.slug}>
                       <Link
-                        href={`/category/${cat.slug}`}
+                        href={cat.slug === "all" ? "/" : `/category/${cat.slug}`}
                         className={cn(
                           "group flex items-center gap-2 px-3 py-2.5 text-xs font-medium transition-all duration-150 relative",
                           isActive
@@ -172,12 +172,15 @@ export function CategoryNavigation({
         >
           <div className="px-3 py-2 flex items-center gap-2 min-w-max">
             {navCategories.map((cat) => {
-              const isActive = pathname === `/category/${cat.slug}`;
+              const isActive =
+                cat.slug === "all"
+                  ? pathname === "/"
+                  : pathname === `/category/${cat.slug}`;
 
               return (
                 <Link
                   key={cat.slug}
-                  href={`/category/${cat.slug}`}
+                  href={cat.slug === "all" ? "/" : `/category/${cat.slug}`}
                   className={cn(
                     "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all shrink-0 border",
                     isActive

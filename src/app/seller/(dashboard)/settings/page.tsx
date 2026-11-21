@@ -9,6 +9,7 @@ import { authService } from "@/services/authService";
 import { useToast } from "@/components/common/Toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Truck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const SETTINGS = [
@@ -23,7 +24,7 @@ const SETTINGS = [
 
 export default function SellerSettingsPage() {
   const isHydrated = useHydration();
-  const { seller } = useSellerStore();
+  const { seller, updateSeller } = useSellerStore();
   const router = useRouter();
   const { toast } = useToast();
   const currentSeller = isHydrated ? seller : null;
@@ -34,6 +35,9 @@ export default function SellerSettingsPage() {
     confirmPassword: "",
   });
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
+  const [shippingPincode, setShippingPincode] = useState(currentSeller?.address?.pincode || "");
+  const [isSavingShipping, setIsSavingShipping] = useState(false);
+  const [isEditingShipping, setIsEditingShipping] = useState(false);
 
   const handleUpdatePassword = async () => {
     const currentPassword = passwordForm.currentPassword;
@@ -63,6 +67,36 @@ export default function SellerSettingsPage() {
       toast({ type: "error", title: "Password update failed", message });
     } finally {
       setIsUpdatingPassword(false);
+    }
+  };
+
+  const handleSaveShipping = async () => {
+    const pin = shippingPincode.replace(/\D/g, '').slice(0, 6);
+    if (!/^\d{6}$/.test(pin)) {
+      toast({ type: "error", message: "Please enter a valid 6-digit pincode." });
+      return;
+    }
+    setIsSavingShipping(true);
+    try {
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/api/v1/seller/settings/shipping`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pickupPincode: pin }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok || json?.success === false) {
+        throw new Error(json?.message || json?.error?.message || "Failed to save shipping PIN.");
+      }
+      toast({ type: "success", title: "Saved", message: "Shipping origin PIN saved successfully." });
+      updateSeller?.({ address: { ...(currentSeller?.address || {}), pincode: pin } as any });
+      setShippingPincode(pin);
+      setIsEditingShipping(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to save shipping PIN.";
+      toast({ type: "error", title: "Save failed", message });
+    } finally {
+      setIsSavingShipping(false);
     }
   };
 
@@ -235,17 +269,47 @@ export default function SellerSettingsPage() {
                 <p className="text-sm text-[#878787]">
                   Configure shipping preferences for your store.
                 </p>
-                <div className="mt-4 space-y-3">
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Preferred Shipping Partner</label>
-                    <Input defaultValue="Delhivery" />
+                {isEditingShipping ? (
+                  <>
+                    <div className="mt-4 space-y-3">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Preferred Shipping Partner</label>
+                        <Input defaultValue="Delhivery" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Shipping Origin (PIN)</label>
+                        <Input
+                          type="text"
+                          maxLength={6}
+                          value={shippingPincode}
+                          onChange={(e) => setShippingPincode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          placeholder="160055"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button variant="primary" onClick={handleSaveShipping} isLoading={isSavingShipping} disabled={isSavingShipping}>
+                        {isSavingShipping ? "Saving..." : "Save Changes"}
+                      </Button>
+                      <Button variant="outline" onClick={() => { setIsEditingShipping(false); setShippingPincode(currentSeller?.address?.pincode || ""); }}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="bg-[#F1F3F6] border border-[#E0E0E0] rounded-sm p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Truck size={16} className="text-[#2874F0] shrink-0" />
+                      <div>
+                        <p className="text-xs font-bold text-[#878787] uppercase tracking-wider mb-0.5">Shipping Origin (PIN)</p>
+                        <p className="text-sm font-semibold text-[#212121]">{shippingPincode || "Not set"}</p>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setIsEditingShipping(true)}>
+                      Edit
+                    </Button>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Shipping Origin (PIN)</label>
-                    <Input defaultValue={currentSeller?.address?.pincode || ""} />
-                  </div>
-                </div>
-                <Button variant="primary">Save Shipping Preferences</Button>
+                )}
               </div>
             )}
             {active === "tax" && (

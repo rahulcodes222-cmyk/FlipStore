@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -311,9 +311,85 @@ export default function CartPage() {
   const [couponDiscount, setCouponDiscount] = useState<number>(0);
   const [couponResult, setCouponResult] = useState<CouponValidationResult | null>(null);
   const [isApplyingCoupon, setIsApplyingCoupon] = useState(false);
+  const [deliverySettings, setDeliverySettings] = useState<{ standardFee?: number; freeThreshold?: number } | null>(null);
+  const [realTimeDeliveryRate, setRealTimeDeliveryRate] = useState<number | null>(null);
+  const [isFetchingDeliveryRate, setIsFetchingDeliveryRate] = useState(false);
 
   // Saved‑for‑Later (session + localStorage)
   const [savedItems, setSavedItems] = useState<CartItem[]>(() => readSaved());
+
+  // ── Fetch delivery settings from backend ─────────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    const fetchDeliverySettings = async () => {
+      try {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/api/v1/admin/settings`, {
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+        });
+        if (res.ok) {
+          const json = await res.json().catch(() => ({}));
+          const data = json?.data || {};
+          setDeliverySettings({
+            standardFee: data.standardDeliveryCharge,
+            freeThreshold: data.freeDeliveryAboveAmount,
+          });
+        }
+      } catch {
+        // Silently fall back to APP_CONFIG defaults
+      }
+    };
+    fetchDeliverySettings();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ── Fetch real-time Shiprocket delivery rate ─────────────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    const fetchRealTimeRate = async () => {
+      try {
+        setIsFetchingDeliveryRate(true);
+        // Get user's default address pincode
+        const addrRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL || ""}/api/v1/users/addresses`, {
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+        });
+        let deliveryPincode = "";
+        if (addrRes.ok) {
+          const addrJson = await addrRes.json().catch(() => ({}));
+          const addresses = addrJson?.data || addrJson?.addresses || [];
+          const defaultAddr = Array.isArray(addresses) ? addresses.find((a: any) => a.isDefault) : null;
+          deliveryPincode = defaultAddr?.pincode || "";
+        }
+        if (!deliveryPincode) return;
+
+        const rateRes = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL || ""}/api/v1/checkout/delivery-rate?pincode=${encodeURIComponent(deliveryPincode)}`,
+          { credentials: "include", headers: { "Content-Type": "application/json" } },
+        );
+        if (rateRes.ok) {
+          const rateJson = await rateJsonParse(rateRes);
+          if (rateJson?.data?.charge != null) {
+            setRealTimeDeliveryRate(Number(rateJson.data.charge));
+          }
+        }
+      } catch {
+        // Silently fall back to admin delivery settings
+      } finally {
+        setIsFetchingDeliveryRate(false);
+      }
+    };
+    fetchRealTimeRate();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function rateJsonParse(res: Response): Promise<any> {
+    try { return await res.json(); } catch { return {}; }
+  }
 
   // ── Handlers ────────────────────────────────────────────────────────────────
 
@@ -441,8 +517,8 @@ export default function CartPage() {
     );
   }
 
-  const summary = getSummary();
-  const finalPayable = Math.max(0, summary.totalPayable - couponDiscount);
+  const summary = getSummary(deliverySettings || undefined);
+  const finalPayable = Math.max(0, summary.subtotal - couponDiscount + (realTimeDeliveryRate ?? summary.deliveryCharges));
   const totalSavingsWithCoupon = summary.totalSavings + couponDiscount;
 
   return (
@@ -639,11 +715,13 @@ export default function CartPage() {
                   <div className="flex justify-between">
                     <span className="text-[#878787]">Delivery Charges</span>
                     <span className="font-medium">
-                      {summary.deliveryCharges === 0 ? (
-                        <span className="text-[#388E3C] font-semibold">FREE</span>
-                      ) : (
-                        `₹${summary.deliveryCharges}`
-                      )}
+                      {realTimeDeliveryRate != null
+                        ? realTimeDeliveryRate === 0
+                          ? <span className="text-[#388E3C] font-semibold">FREE</span>
+                          : `₹${realTimeDeliveryRate}`
+                        : summary.deliveryCharges === 0
+                          ? <span className="text-[#388E3C] font-semibold">FREE</span>
+                          : `₹${summary.deliveryCharges}`}
                     </span>
                   </div>
                 </div>

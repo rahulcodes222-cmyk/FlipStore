@@ -18,7 +18,7 @@ interface CartState {
   setHasHydrated: (state: boolean) => void;
 
   // Computed helper
-  getSummary: () => CartCalculationSummary;
+  getSummary: (deliverySettings?: { standardFee?: number; freeThreshold?: number }) => CartCalculationSummary;
   getItemCount: () => number;
 }
 
@@ -92,9 +92,9 @@ export const useCartStore = create<CartState>()(
         set({ _hasHydrated: hasHydrated });
       },
 
-      getSummary: () => {
+      getSummary: (deliverySettings?) => {
         const { items, appliedCoupon } = get();
-        return cartService.calculateSummary(items, appliedCoupon);
+        return cartService.calculateSummary(items, appliedCoupon, deliverySettings);
       },
 
       getItemCount: () => {

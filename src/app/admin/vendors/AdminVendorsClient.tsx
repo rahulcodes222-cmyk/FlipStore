@@ -13,6 +13,9 @@ import {
   Clock3,
   Ban,
   X,
+  FileText,
+  Image as ImageIcon,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,12 +29,21 @@ type VendorStatus = "Draft" | "Pending" | "Under Review" | "Approved" | "Rejecte
 interface VendorRow {
   id: string;
   sellerId?: string;
+  userId?: string;
   storeName?: string;
+  storeSlug?: string;
   applicationStatus: VendorStatus;
+  approvalStatus?: string;
   rejectionReason?: string;
+  suspensionReason?: string;
   adminNotes?: string;
   submittedAt?: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+  suspendedAt?: string;
+  lastReviewedAt?: string;
   createdAt?: string;
+  updatedAt?: string;
   businessDetails?: {
     businessName?: string;
     businessType?: string;
@@ -43,8 +55,36 @@ interface VendorRow {
   };
   gstNumber?: string;
   panNumber?: string;
-  storeProfile?: { supportEmail?: string; supportPhone?: string; description?: string };
-  bankDetails?: { accountHolderName?: string; bankName?: string; accountNumberMasked?: string; ifscCode?: string };
+  storeProfile?: { storeName?: string; storeSlug?: string; description?: string; logoUrl?: string; bannerUrl?: string; supportEmail?: string; supportPhone?: string };
+  bankDetails?: { accountHolderName?: string; bankName?: string; accountNumberMasked?: string; accountLast4?: string; ifscCode?: string; upiId?: string; branchName?: string; updatedAt?: string };
+  documents?: Array<{
+    id: string;
+    type: string;
+    fileName: string;
+    fileUrl: string;
+    mimeType: string;
+    status: string;
+    uploadedAt: string;
+  }>;
+  auditLog?: Array<{
+    action: string;
+    fromStatus: string;
+    toStatus: string;
+    note: string;
+    actorId: string;
+    actorRole: string;
+    actorName: string;
+    createdAt: string;
+  }>;
+  commissionRate?: number;
+  rating?: number;
+  totalSales?: number;
+  totalOrders?: number;
+  totalProducts?: number;
+  availableBalance?: number;
+  totalEarnings?: number;
+  pendingOrders?: number;
+  cancelledOrders?: number;
 }
 
 function StatusBadge({ status }: { status: string }) {
@@ -70,6 +110,32 @@ export function AdminVendorsClient() {
   const [selected, setSelected] = useState<VendorRow | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [reason, setReason] = useState("");
+  const [viewingDocument, setViewingDocument] = useState<{ fileUrl: string; fileName: string; mimeType: string } | null>(null);
+
+  const resolveDocumentUrl = (fileUrl: string): string => {
+    if (!fileUrl) return "";
+    if (fileUrl.startsWith("http://") || fileUrl.startsWith("https://")) {
+      return fileUrl;
+    }
+    if (fileUrl.startsWith("/")) {
+      return `${window.location.origin}${fileUrl}`;
+    }
+    return fileUrl;
+  };
+
+  const openDocument = (fileUrl: string, fileName: string, mimeType: string) => {
+    const absoluteUrl = resolveDocumentUrl(fileUrl);
+    if (!absoluteUrl) return;
+
+    // Blob URLs are document-local — show inline in a viewer modal
+    if (absoluteUrl.startsWith("blob:")) {
+      setViewingDocument({ fileUrl: absoluteUrl, fileName, mimeType });
+      return;
+    }
+
+    // Regular HTTP(S) URLs open in a new tab
+    window.open(absoluteUrl, "_blank");
+  };
 
   const fetchVendors = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true); else setRefreshing(true);
@@ -224,14 +290,39 @@ export function AdminVendorsClient() {
 
       {selected && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setSelected(null)}>
-          <div className="bg-white rounded-sm max-w-2xl w-full max-h-[90vh] overflow-y-auto p-5 shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-sm max-w-3xl w-full max-h-[90vh] overflow-y-auto p-5 shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-start justify-between gap-3 border-b border-[#F0F0F0] pb-3">
               <div>
-                <p className="font-semibold text-sm text-[#212121]">{selected.storeName || selected.businessDetails?.businessName || "Seller Application"}</p>
-                <p className="text-[11px] text-[#878787]">Seller ID: {selected.sellerId || selected.id}</p>
+                <p className="font-semibold text-sm text-[#212121]">{selected.storeName || selected.businessDetails?.businessName || "Vendor Application"}</p>
+                <p className="text-[11px] text-[#878787]">Vendor ID: {selected.sellerId || selected.id}</p>
               </div>
               <div className="flex items-center gap-2"><StatusBadge status={selected.applicationStatus} /><button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600"><X size={18} /></button></div>
             </div>
+
+            {/* Store Profile & Logo */}
+            {(selected.storeProfile?.logoUrl || selected.storeProfile?.bannerUrl || selected.storeName) && (
+              <div className="border border-[#F0F0F0] rounded-sm p-3 space-y-2">
+                <p className="font-semibold text-[#212121] text-xs">Store Profile</p>
+                <div className="flex items-center gap-3">
+                  {selected.storeProfile?.logoUrl && (
+                    <div className="w-16 h-16 rounded border border-[#E0E0E0] overflow-hidden">
+                      <img src={selected.storeProfile.logoUrl} alt="Store Logo" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <p><span className="text-[#878787]">Store Name:</span> {selected.storeProfile?.storeName || selected.storeName || "-"}</p>
+                    {selected.storeProfile?.description && (
+                      <p className="text-[11px] text-[#555] mt-0.5">{selected.storeProfile.description}</p>
+                    )}
+                  </div>
+                </div>
+                {selected.storeProfile?.bannerUrl && (
+                  <div className="mt-2 w-full h-24 rounded border border-[#E0E0E0] overflow-hidden">
+                    <img src={selected.storeProfile.bannerUrl} alt="Store Banner" className="w-full h-full object-cover" />
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
               <div className="border border-[#F0F0F0] rounded-sm p-3 space-y-1.5">
@@ -239,18 +330,27 @@ export function AdminVendorsClient() {
                 <p><span className="text-[#878787]">Name:</span> {selected.businessDetails?.businessName || "-"}</p>
                 <p><span className="text-[#878787]">Type:</span> {selected.businessDetails?.businessType || "-"}</p>
                 <p><span className="text-[#878787]">Category:</span> {selected.businessDetails?.category || "-"}</p>
+                <p><span className="text-[#878787]">Description:</span> {selected.businessDetails?.businessDescription || "-"}</p>
                 <p><span className="text-[#878787]">Email:</span> {selected.businessDetails?.businessEmail || "-"}</p>
                 <p><span className="text-[#878787]">Phone:</span> {selected.businessDetails?.businessPhone || "-"}</p>
                 <p><span className="text-[#878787]">GST:</span> {selected.gstNumber || "-"}</p>
                 <p><span className="text-[#878787]">PAN:</span> {selected.panNumber || "-"}</p>
               </div>
               <div className="border border-[#F0F0F0] rounded-sm p-3 space-y-1.5">
-                <p className="font-semibold text-[#212121]">Bank (Masked)</p>
+                <p className="font-semibold text-[#212121]">Bank Details</p>
                 <p><span className="text-[#878787]">Account Holder:</span> {selected.bankDetails?.accountHolderName || "-"}</p>
                 <p><span className="text-[#878787]">Bank:</span> {selected.bankDetails?.bankName || "-"}</p>
-                <p><span className="text-[#878787]">Account:</span> {selected.bankDetails?.accountNumberMasked || "-"}</p>
+                <p><span className="text-[#878787]">Account:</span> {selected.bankDetails?.accountNumberMasked || selected.bankDetails?.accountLast4 || "-"}</p>
                 <p><span className="text-[#878787]">IFSC:</span> {selected.bankDetails?.ifscCode || "-"}</p>
-                <p className="pt-1"><span className="text-[#878787]">Submitted:</span> {selected.submittedAt ? new Date(selected.submittedAt).toLocaleString("en-IN") : "-"}</p>
+                {selected.bankDetails?.upiId && (
+                  <p><span className="text-[#878787]">UPI ID:</span> {selected.bankDetails.upiId}</p>
+                )}
+                {selected.bankDetails?.branchName && (
+                  <p><span className="text-[#878787]">Branch:</span> {selected.bankDetails.branchName}</p>
+                )}
+                {selected.bankDetails?.updatedAt && (
+                  <p><span className="text-[#878787]">Updated:</span> {new Date(selected.bankDetails.updatedAt).toLocaleString("en-IN")}</p>
+                )}
               </div>
             </div>
 
@@ -260,6 +360,112 @@ export function AdminVendorsClient() {
                 <p className="text-[#555]">{[selected.businessDetails.address.street, selected.businessDetails.address.locality, selected.businessDetails.address.city, selected.businessDetails.address.state, selected.businessDetails.address.pincode].filter(Boolean).join(", ")}</p>
               </div>
             )}
+
+            {/* Documents */}
+            {selected.documents && selected.documents.length > 0 && (
+              <div className="border border-[#F0F0F0] rounded-sm p-3 text-xs">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="font-semibold text-[#212121]">Uploaded Documents ({selected.documents.length})</p>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {selected.documents.map((doc) => (
+                    <div key={doc.id} className="border border-[#E0E0E0] rounded-sm p-2 bg-[#FAFAFA]">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-8 h-8 rounded bg-[#E0E0E0] flex items-center justify-center text-[10px] text-[#555]">
+                          {doc.mimeType?.startsWith("image/") ? <ImageIcon size={14} /> : <FileText size={14} />}
+                        </div>
+                        <span className="text-[10px] font-semibold text-[#212121]">{doc.type}</span>
+                        <span className={`text-[9px] px-1 py-0 rounded ${
+                          doc.status === "approved" ? "bg-green-50 text-green-700" :
+                          doc.status === "rejected" ? "bg-red-50 text-red-700" :
+                          doc.status === "under review" ? "bg-blue-50 text-blue-700" :
+                          "bg-gray-50 text-gray-700"
+                        }`}>{doc.status}</span>
+                      </div>
+                      <p className="text-[10px] text-[#555] truncate" title={doc.fileName}>{doc.fileName}</p>
+                      <p className="text-[9px] text-[#878787]">{doc.mimeType}</p>
+                      <button
+                        onClick={() => openDocument(doc.fileUrl, doc.fileName, doc.mimeType)}
+                        className="text-[10px] text-[#2874F0] underline hover:text-[#1259c7] flex items-center gap-1 cursor-pointer"
+                      >
+                        <Upload size={10} className="mr-1" /> View Document
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Audit Log */}
+            {selected.auditLog && selected.auditLog.length > 0 && (
+              <div className="border border-[#F0F0F0] rounded-sm p-3 text-xs">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="font-semibold text-[#212121]">Audit Log ({selected.auditLog.length})</p>
+                </div>
+                <div className="space-y-2">
+                  {selected.auditLog.map((log) => (
+                    <div key={log.createdAt + log.action} className="border-b border-[#F0F0F0] pb-2 last:border-0">
+                      <div className="flex items-center gap-2 text-xs mb-0.5">
+                        <span className="text-[#878787] font-semibold">{log.action}</span>
+                        <span
+                          className={`px-1 py-0 rounded text-[9px] font-bold ${
+                            log.toStatus?.toLowerCase() === "approved"
+                              ? "bg-green-50 text-green-700"
+                              : log.toStatus?.toLowerCase() === "rejected"
+                              ? "bg-red-50 text-red-700"
+                              : log.toStatus?.toLowerCase() === "under review"
+                              ? "bg-blue-50 text-blue-700"
+                              : log.toStatus?.toLowerCase() === "pending"
+                              ? "bg-amber-50 text-amber-700"
+                              : "bg-gray-50 text-gray-700"
+                          }`}
+                        >
+                          {log.fromStatus || "-"} → {log.toStatus || "-"}
+                        </span>
+                        <span className="text-[9px] text-[#555]">
+                          {new Date(log.createdAt).toLocaleString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </span>
+                      </div>
+                      {log.note && (
+                        <p className="text-[10px] text-[#555] ml-6">{log.note}</p>
+                      )}
+                      {log.actorName && (
+                        <p className="text-[10px] text-[#555] ml-6">
+                          <span className="text-[#878787]">By:</span>{" "}
+                          {log.actorName} ({log.actorRole})
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Business Metrics */}
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+              <Card className="border-[#E0E0E0]"><CardContent className="p-3">
+                <p className="text-[10px] text-[#878787] uppercase font-semibold">Rating</p>
+                <p className="text-lg font-bold text-[#212121]">{selected.rating || 0}</p>
+              </CardContent></Card>
+              <Card className="border-[#E0E0E0]"><CardContent className="p-3">
+                <p className="text-[10px] text-[#878787] uppercase font-semibold">Total Sales</p>
+                <p className="text-lg font-bold text-[#212121]">{selected.totalSales || 0}</p>
+              </CardContent></Card>
+              <Card className="border-[#E0E0E0]"><CardContent className="p-3">
+                <p className="text-[10px] text-[#878787] uppercase font-semibold">Total Orders</p>
+                <p className="text-lg font-bold text-[#212121]">{selected.totalOrders || 0}</p>
+              </CardContent></Card>
+              <Card className="border-[#E0E0E0]"><CardContent className="p-3">
+                <p className="text-[10px] text-[#878787] uppercase font-semibold">Total Products</p>
+                <p className="text-lg font-bold text-[#212121]">{selected.totalProducts || 0}</p>
+              </CardContent></Card>
+            </div>
 
             <div className="border border-[#F0F0F0] rounded-sm p-3 space-y-2">
               <p className="font-semibold text-[#212121] text-xs">Admin Action Note (optional)</p>
@@ -281,6 +487,38 @@ export function AdminVendorsClient() {
                   </Button>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Document Viewer Modal (for blob URLs) ───────────────────────────── */}
+      {viewingDocument && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => setViewingDocument(null)}>
+          <div className="bg-white rounded-sm max-w-4xl w-full max-h-[80vh] overflow-hidden shadow-2xl flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-[#E0E0E0] p-4">
+              <h2 className="text-base font-bold text-[#212121]">{viewingDocument.fileName}</h2>
+              <button onClick={() => setViewingDocument(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-auto bg-[#F1F3F6] p-4 flex items-center justify-center">
+              {viewingDocument.mimeType.startsWith("image/") ? (
+                <img src={viewingDocument.fileUrl} alt={viewingDocument.fileName} className="max-w-full max-h-full object-contain" />
+              ) : viewingDocument.mimeType.includes("pdf") ? (
+                <iframe src={viewingDocument.fileUrl} className="w-full h-full" />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-[#878787] text-sm">
+                  <FileText size={48} className="mb-2 text-gray-400" />
+                  <p>Document preview not supported for this file type.</p>
+                  <p className="text-[10px] text-[#555] mt-1">{viewingDocument.mimeType}</p>
+                </div>
+              )}
+            </div>
+            <div className="border-t border-[#E0E0E0] p-3 flex justify-end">
+              <button onClick={() => setViewingDocument(null)} className="text-xs text-[#2874F0] underline hover:text-[#1259c7]">
+                Close
+              </button>
             </div>
           </div>
         </div>

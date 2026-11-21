@@ -110,7 +110,7 @@ export const cartService = {
   /**
    * Calculate full pricing summary for Flipkart-style Price Details widget
    */
-  calculateSummary(items: CartItem[], coupon: Coupon | null = null): CartCalculationSummary {
+  calculateSummary(items: CartItem[], coupon: Coupon | null = null, deliverySettings?: { standardFee?: number; freeThreshold?: number }): CartCalculationSummary {
     const itemsCount = items.reduce((acc, curr) => acc + curr.quantity, 0);
     const totalMrp = items.reduce((acc, curr) => acc + curr.product.mrp * curr.quantity, 0);
     const subtotal = items.reduce((acc, curr) => acc + curr.product.price * curr.quantity, 0);
@@ -126,11 +126,15 @@ export const cartService = {
       }
     }
 
-    // Free delivery if subtotal after discount >= 500, else standard fee
+    // Use backend-configured delivery settings if provided, else fall back to APP_CONFIG defaults
+    const standardFee = deliverySettings?.standardFee ?? APP_CONFIG.delivery.standardFee;
+    const freeThreshold = deliverySettings?.freeThreshold ?? APP_CONFIG.delivery.freeThreshold;
+
+    // Free delivery if subtotal after discount >= freeThreshold, else standard fee
     const deliveryCharges =
-      subtotal === 0 || subtotal >= APP_CONFIG.delivery.freeThreshold
+      subtotal === 0 || subtotal >= freeThreshold
         ? 0
-        : APP_CONFIG.delivery.standardFee;
+        : standardFee;
 
     const totalPayable = Math.max(0, subtotal - couponDiscount + deliveryCharges);
     const totalSavings = discountOnMrp + couponDiscount;

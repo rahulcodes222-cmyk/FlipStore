@@ -16,6 +16,7 @@ import {
   PaymentModel,
   CouponModel,
   VendorModel,
+  SellerStoreModel,
 } from '@/backend/models';
 import type { CheckoutSummaryInput, CreateOrderInput } from '@/backend/validations/checkout.schema';
 import type { IProductDocument } from '@/backend/types';
@@ -283,6 +284,7 @@ async function resolveCheckoutDeliveryCharge(params: {
   totalQuantity: number;
   destinationPincode?: string;
   paymentMethod?: string;
+  pickupPincode?: string;
 }): Promise<{ deliveryCharges: number; freeDeliveryThreshold: number; standardDeliveryCharge: number; source: 'free' | 'shiprocket' | 'standard' | 'fallback' }> {
   const settings = await getDeliverySettings().catch(() => ({ standardDeliveryCharge: 40, freeDeliveryAboveAmount: 499 }));
   const threshold = Math.max(0, Number(settings.freeDeliveryAboveAmount ?? 499));
@@ -300,6 +302,7 @@ async function resolveCheckoutDeliveryCharge(params: {
     try {
       const rate = await getShiprocketDeliveryRate({
         deliveryPincode: destinationPincode,
+        pickupPincode: params.pickupPincode,
         weightKg,
         cod: String(params.paymentMethod || '').toUpperCase() === 'COD',
         declaredValue: subtotal,
@@ -463,11 +466,23 @@ export async function createOrder(userId: string, input: CreateOrderInput) {
 
     let { orderItems, totalMrp, subtotal, discount, totalQuantity } = built;
     const destinationPincode = input.shippingAddress?.pincode || String((address as any)?.pincode || '');
+
+    // Resolve the first seller's pickup pincode for Shiprocket rate calculation
+    let sellerPickupPincode: string | undefined;
+    try {
+      const firstSellerId = orderItems?.[0]?.sellerId;
+      if (firstSellerId) {
+        const sellerStore = await SellerStoreModel.findOne({ sellerId: firstSellerId }).select('address.pincode').lean().exec();
+        sellerPickupPincode = (sellerStore as any)?.address?.pincode || undefined;
+      }
+    } catch {}
+
     const delivery = await resolveCheckoutDeliveryCharge({
       subtotal,
       totalQuantity: totalQuantity || (orderItems || []).reduce((s: number, i: any) => s + Number(i.quantity || 0), 0),
       destinationPincode,
       paymentMethod: input.paymentMethod,
+      pickupPincode: sellerPickupPincode,
     });
     const deliveryCharges = round2(delivery.deliveryCharges);
     const appliedCouponResolved = await resolveApplicableCoupon((input as any).couponCode, subtotal, session);

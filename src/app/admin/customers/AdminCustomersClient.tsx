@@ -19,10 +19,18 @@ import { adminService } from "@/services/adminService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
+const ROLE_FILTERS = [
+  { value: "all", label: "All" },
+  { value: "customer", label: "Customer" },
+  { value: "vendor", label: "Vendor" },
+  { value: "admin", label: "Admin" },
+] as const;
+
 export function AdminCustomersClient() {
   const [customers, setCustomers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | "customer" | "vendor" | "admin">("all");
   const [selectedCustomer, setSelectedCustomer] = useState<User | null>(null);
 
   const loadCustomers = async () => {
@@ -42,16 +50,19 @@ export function AdminCustomersClient() {
   }, []);
 
   const filteredCustomers = useMemo(() => {
-    if (!searchQuery.trim()) return customers;
     const q = searchQuery.toLowerCase().trim();
-    return customers.filter(
-      (c) =>
+    return customers.filter((c) => {
+      const matchesSearch =
+        !q ||
         c.name.toLowerCase().includes(q) ||
         c.email.toLowerCase().includes(q) ||
         c.phone.includes(q) ||
-        c.id.toLowerCase().includes(q)
-    );
-  }, [customers, searchQuery]);
+        c.id.toLowerCase().includes(q);
+      const matchesRole =
+        roleFilter === "all" || c.role.toLowerCase() === roleFilter;
+      return matchesSearch && matchesRole;
+    });
+  }, [customers, searchQuery, roleFilter]);
 
   return (
     <div className="space-y-6">
@@ -91,6 +102,26 @@ export function AdminCustomersClient() {
             className="pl-9 h-9 text-xs bg-gray-50 border-gray-200 focus:bg-white"
           />
         </div>
+      </div>
+
+      {/* ── Role Filter Pills ─────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-md border border-gray-200 p-4 shadow-xs flex flex-wrap items-center gap-2">
+        {ROLE_FILTERS.map(({ value, label }) => (
+          <button
+            key={value}
+            onClick={() => setRoleFilter(value)}
+            className={`px-3 py-1.5 rounded text-xs font-medium transition-colors border ${
+              roleFilter === value
+                ? "bg-[#2874F0] text-white border-[#2874F0]"
+                : "bg-white text-gray-600 border-gray-200 hover:border-gray-300"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+        <span className="ml-auto text-[10px] text-gray-400 font-bold uppercase tracking-wider">
+          {filteredCustomers.length} of {customers.length}
+        </span>
       </div>
 
       {/* ── Customers Table ─────────────────────────────────────────────────── */}

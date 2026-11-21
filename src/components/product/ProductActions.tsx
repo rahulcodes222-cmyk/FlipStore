@@ -127,7 +127,7 @@ export function ProductActions({ product }: ProductActionsProps) {
       1,
       Object.keys(selectedVariants).length > 0 ? selectedVariants : undefined
     );
-    setCartQty((prev) => prev + 1);
+    setCartQty(isInCart ? cartQty + 1 : 1);
 
     toast({
       type: "success",

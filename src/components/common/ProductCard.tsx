@@ -49,7 +49,7 @@ export function ProductCard({
     if (!isAuthenticated) return;
     if (cartQty >= Number(product.stock || 0)) return;
     addItemToCart(product, 1);
-    setCartQty((prev) => prev + 1);
+    setCartQty(isInCart ? cartQty + 1 : 1);
     setAddedAnimation(true);
     setTimeout(() => setAddedAnimation(false), 1500);
   };
