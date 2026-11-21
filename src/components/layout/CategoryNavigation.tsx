@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -13,18 +13,53 @@ import {
   ShoppingBag,
   Baby,
   Flame,
+  Package,
+  Grid,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { categoryService } from "@/services/categoryService";
+import { Category } from "@/types";
 
-export const CATEGORIES_NAV_ITEMS = [
-  { label: "Electronics", slug: "electronics", icon: Laptop },
-  { label: "Mobiles", slug: "mobiles", icon: Smartphone },
-  { label: "Fashion", slug: "fashion", icon: Shirt },
-  { label: "Home & Furniture", slug: "home-furniture", icon: Home },
-  { label: "Appliances", slug: "appliances", icon: Tv },
-  { label: "Beauty", slug: "beauty", icon: Sparkles },
-  { label: "Grocery", slug: "grocery", icon: ShoppingBag },
-  { label: "Toys & Baby", slug: "toys-baby", icon: Baby },
+const ICON_MAP: Record<string, any> = {
+  all: Grid,
+  electronics: Laptop,
+  mobiles: Smartphone,
+  fashion: Shirt,
+  "home-furniture": Home,
+  appliances: Tv,
+  beauty: Sparkles,
+  grocery: ShoppingBag,
+  "toys-baby": Baby,
+};
+
+function getIconForCategory(slug: string) {
+  return ICON_MAP[slug] || Package;
+}
+
+interface NavCategory {
+  label: string;
+  slug: string;
+  Icon: any;
+}
+
+function toNavCategory(cat: Category): NavCategory {
+  return {
+    label: cat.name,
+    slug: cat.slug,
+    Icon: getIconForCategory(cat.slug),
+  };
+}
+
+export const CATEGORIES_NAV_ITEMS: NavCategory[] = [
+  { label: "For You", slug: "all", Icon: Grid },
+  { label: "Electronics", slug: "electronics", Icon: Laptop },
+  { label: "Mobiles", slug: "mobiles", Icon: Smartphone },
+  { label: "Fashion", slug: "fashion", Icon: Shirt },
+  { label: "Home & Furniture", slug: "home-furniture", Icon: Home },
+  { label: "Appliances", slug: "appliances", Icon: Tv },
+  { label: "Beauty", slug: "beauty", Icon: Sparkles },
+  { label: "Grocery", slug: "grocery", Icon: ShoppingBag },
+  { label: "Toys & Baby", slug: "toys-baby", Icon: Baby },
 ];
 
 export interface CategoryNavigationProps {
@@ -37,6 +72,33 @@ export function CategoryNavigation({
   className,
 }: CategoryNavigationProps) {
   const pathname = usePathname();
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    categoryService
+      .getCategories()
+      .then((list) => {
+        if (!cancelled) {
+          setCategories(list);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const navCategories: NavCategory[] = categories.length > 0
+    ? [
+        { label: "For You", slug: "all", Icon: Grid },
+        ...categories.map(toNavCategory),
+      ]
+    : CATEGORIES_NAV_ITEMS;
 
   return (
     <>
@@ -50,10 +112,12 @@ export function CategoryNavigation({
         >
           <div className="max-w-[1280px] mx-auto px-4">
             <nav aria-label="Desktop Categories">
-              <ul className="flex items-center justify-between">
-                {CATEGORIES_NAV_ITEMS.map((cat) => {
-                  const Icon = cat.icon;
-                  const isActive = pathname === `/category/${cat.slug}`;
+              <ul className="flex items-center gap-3 overflow-x-auto scrollbar-none pb-1">
+                {navCategories.map((cat) => {
+                  const isActive =
+                    cat.slug === "all"
+                      ? pathname === "/" || pathname === "/category/all"
+                      : pathname === `/category/${cat.slug}`;
 
                   return (
                     <li key={cat.slug}>
@@ -66,7 +130,7 @@ export function CategoryNavigation({
                             : "text-gray-200 hover:text-white hover:bg-[#21314d]"
                         )}
                       >
-                        <Icon
+                        <cat.Icon
                           size={15}
                           className={cn(
                             "transition-transform duration-200 group-hover:scale-110",
@@ -107,8 +171,7 @@ export function CategoryNavigation({
           )}
         >
           <div className="px-3 py-2 flex items-center gap-2 min-w-max">
-            {CATEGORIES_NAV_ITEMS.map((cat) => {
-              const Icon = cat.icon;
+            {navCategories.map((cat) => {
               const isActive = pathname === `/category/${cat.slug}`;
 
               return (
@@ -122,7 +185,7 @@ export function CategoryNavigation({
                       : "bg-[#F1F3F6] text-[#212121] border-transparent hover:bg-gray-200 active:scale-95"
                   )}
                 >
-                  <Icon size={13} className={isActive ? "text-white" : "text-[#2874F0]"} />
+                  <cat.Icon size={13} className={isActive ? "text-white" : "text-[#2874F0]"} />
                   <span className="whitespace-nowrap">{cat.label}</span>
                 </Link>
               );

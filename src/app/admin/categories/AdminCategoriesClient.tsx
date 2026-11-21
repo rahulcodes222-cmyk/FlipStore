@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
 import {
   Layers,
@@ -11,6 +11,7 @@ import {
   X,
   AlertCircle,
   FolderOpen,
+  Search,
 } from "lucide-react";
 import { Category } from "@/types";
 import { adminService } from "@/services/adminService";
@@ -33,6 +34,10 @@ export function AdminCategoriesClient() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Search & filter state
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterType, setFilterType] = useState<"all" | "featured" | "with-products">("all");
+
   const loadCategories = async () => {
     setLoading(true);
     setLoadError(null);
@@ -50,6 +55,19 @@ export function AdminCategoriesClient() {
   useEffect(() => {
     loadCategories();
   }, []);
+
+  const filteredCategories = useMemo(() => {
+    return categories.filter((cat) => {
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !q || cat.name.toLowerCase().includes(q) || cat.slug.toLowerCase().includes(q);
+      const matchesFilter =
+        filterType === "all" ||
+        (filterType === "featured" && cat.isFeatured) ||
+        (filterType === "with-products" && (cat.itemCount || 0) > 0);
+      return matchesSearch && matchesFilter;
+    });
+  }, [categories, searchQuery, filterType]);
 
   const openAddModal = () => {
     setEditingCategory(null);
@@ -156,6 +174,52 @@ export function AdminCategoriesClient() {
         </div>
       </div>
 
+      {/* ── Search & Filter ───────────────────────────────────────────────────── */}
+      <div className="bg-white rounded-md border border-gray-200 p-4 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex-1 min-w-[240px] max-w-md relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <Input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search categories by name or slug..."
+            className="pl-9 h-9 text-xs bg-gray-50 border-gray-200 focus:bg-white"
+          />
+        </div>
+
+        {/* <div className="flex items-center gap-1.5 text-xs font-semibold">
+          <button
+            onClick={() => setFilterType("all")}
+            className={`px-3 py-1.5 rounded transition-colors ${
+              filterType === "all"
+                ? "bg-[#2874F0] text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setFilterType("featured")}
+            className={`px-3 py-1.5 rounded transition-colors ${
+              filterType === "featured"
+                ? "bg-[#2874F0] text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            Featured
+          </button>
+          <button
+            onClick={() => setFilterType("with-products")}
+            className={`px-3 py-1.5 rounded transition-colors ${
+              filterType === "with-products"
+                ? "bg-[#2874F0] text-white"
+                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            With Products
+          </button>
+        </div> */}
+      </div>
+
       {loadError && (
         <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded flex items-center gap-2">
           <AlertCircle size={14} className="shrink-0" />
@@ -176,7 +240,7 @@ export function AdminCategoriesClient() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-          {categories.map((cat) => (
+          {filteredCategories.map((cat) => (
             <div key={cat.id} className="bg-white rounded-md border border-gray-200 overflow-hidden shadow-xs hover:shadow-md transition-shadow flex flex-col justify-between">
               <div className="relative h-32 w-full bg-gray-100 border-b border-gray-100">
                 {cat.image ? (

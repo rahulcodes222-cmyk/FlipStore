@@ -187,7 +187,7 @@ export function MobileMenu({ isOpen, onClose }: MobileMenuProps) {
               All Categories
             </div>
             {CATEGORIES_NAV_ITEMS.map((cat) => {
-              const Icon = cat.icon;
+              const Icon = cat.Icon;
               return (
                 <Link
                   key={cat.slug}

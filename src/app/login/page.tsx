@@ -365,6 +365,10 @@ export default function LoginPage() {
             <Link href="/register" className="text-[#2874F0] font-semibold hover:underline">
               Create an account
             </Link>
+            &nbsp;|&nbsp;
+            <Link href="/seller/register" className="text-[#2874F0] font-semibold hover:underline">
+              Become a Seller
+            </Link>
           </div>
         </div>
       </div>

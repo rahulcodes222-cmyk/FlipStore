@@ -162,7 +162,13 @@ function CartItemCard({
           <span className="text-[11px] text-[#878787] font-medium">Qty:</span>
           <div className="flex items-center border border-[#E0E0E0] rounded-xs overflow-hidden">
             <button
-              onClick={() => onUpdateQty(product.id, quantity - 1)}
+              onClick={() => {
+                if (quantity <= 1) {
+                  onRemove(product.id);
+                  return;
+                }
+                onUpdateQty(product.id, quantity - 1);
+              }}
               disabled={quantity <= 1}
               className="px-2.5 py-1 text-sm font-bold text-gray-500 hover:bg-gray-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer transition-colors min-h-[32px] min-w-[32px]"
               aria-label="Decrease quantity"
@@ -416,6 +422,20 @@ export default function CartPage() {
           description="Looks like you haven't added anything yet. Explore our top deals now!"
           actionText="Shop Trending Deals"
           actionHref="/"
+        />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="max-w-[1280px] mx-auto px-4 py-16 text-center">
+        <EmptyState
+          preset="cart"
+          title="Please Log In to View Your Cart"
+          description="Your cart items are private to your account. Log in to see your saved items and proceed to checkout."
+          actionText="Sign In"
+          actionHref="/login?redirect=/cart"
         />
       </div>
     );

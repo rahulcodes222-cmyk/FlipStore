@@ -5,8 +5,10 @@ import { useRouter } from "next/navigation";
 import { Product } from "@/types";
 import { useCartStore } from "@/store/useCartStore";
 import { useWishlistStore } from "@/store/useWishlistStore";
+import { useAuthStore } from "@/store/useAuthStore";
 import { useToast } from "@/components/common/Toast";
 import { Button } from "@/components/ui/button";
+import { LoginModal } from "@/components/common/LoginModal";
 import {
   ShoppingCart,
   Zap,
@@ -16,6 +18,8 @@ import {
   Truck,
   CheckCircle2,
   RotateCcw,
+  Minus,
+  Plus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -27,9 +31,16 @@ export function ProductActions({ product }: ProductActionsProps) {
   const router = useRouter();
   const { toast } = useToast();
   const addItem = useCartStore((state) => state.addItem);
+  const updateCartQty = useCartStore((state) => state.updateQuantity);
+  const cartItems = useCartStore((state) => state.items);
   const { toggleItem, isInWishlist } = useWishlistStore();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
   const isFavorited = isInWishlist(product.id);
+  const isInCart = cartItems.some((i) => i.productId === product.id);
+  const cartItem = cartItems.find((i) => i.productId === product.id);
+  const [cartQty, setCartQty] = useState<number>(cartItem?.quantity || 1);
+  const [showLoginModal, setShowLoginModal] = useState(false);
 
   // Variant selections
   const [selectedStorage, setSelectedStorage] = useState<string | undefined>(
@@ -108,12 +119,15 @@ export function ProductActions({ product }: ProductActionsProps) {
   };
 
   const handleAddToCart = () => {
+    if (!isAuthenticated) return;
+    if (cartQty >= Number(product.stock || 0)) return;
     setIsAddingToCart(true);
     addItem(
       product,
-      quantity,
+      1,
       Object.keys(selectedVariants).length > 0 ? selectedVariants : undefined
     );
+    setCartQty((prev) => prev + 1);
 
     toast({
       type: "success",
@@ -124,6 +138,10 @@ export function ProductActions({ product }: ProductActionsProps) {
   };
 
   const handleBuyNow = () => {
+    if (!isAuthenticated) {
+      setShowLoginModal(true);
+      return;
+    }
     addItem(
       product,
       quantity,
@@ -133,6 +151,10 @@ export function ProductActions({ product }: ProductActionsProps) {
   };
 
   const handleToggleWishlist = () => {
+    if (!isAuthenticated) {
+      setShowLoginModal(true);
+      return;
+    }
     toggleItem(product);
     if (!isFavorited) {
       toast({
@@ -150,6 +172,7 @@ export function ProductActions({ product }: ProductActionsProps) {
   };
 
   return (
+    <>
     <div className="space-y-5 pt-1">
       {/* 1. Variant Selector - Size */}
       {product.variants?.size && product.variants.size.length > 0 && (
@@ -300,17 +323,54 @@ export function ProductActions({ product }: ProductActionsProps) {
 
       {/* 5. Action Buttons Row */}
       <div className="flex flex-col sm:flex-row gap-3 pt-2">
-        <Button
-          type="button"
-          variant="addToCart"
-          size="lg"
-          onClick={handleAddToCart}
-          disabled={!product.inStock || isAddingToCart}
-          className="flex-1 font-bold text-sm tracking-wide min-h-[48px]"
-        >
-          <ShoppingCart size={18} className="mr-2" />
-          {isAddingToCart ? "Adding..." : "Add to Cart"}
-        </Button>
+        {!isAuthenticated ? null : isInCart ? (
+          <div className="flex items-center border border-[#E0E0E0] rounded-xs bg-white w-fit flex-1">
+            <button
+              type="button"
+              onClick={() => {
+                if (cartQty <= 1) {
+                  updateCartQty(product.id, 0);
+                  setCartQty(0);
+                  return;
+                }
+                setCartQty((prev) => prev - 1);
+                updateCartQty(product.id, cartQty - 1);
+              }}
+              className="px-4 py-2 min-h-[48px] min-w-[48px] text-sm font-bold text-gray-700 hover:bg-gray-100"
+              aria-label="Decrease quantity"
+            >
+              <Minus size={16} />
+            </button>
+            <span className="px-4 py-2 text-xs font-bold text-[#212121] min-w-10 text-center">
+              {cartQty}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                const next = cartQty + 1;
+                if (next > Number(product.stock || 0)) return;
+                setCartQty(next);
+                updateCartQty(product.id, next);
+              }}
+              className="px-4 py-2 min-h-[48px] min-w-[48px] text-sm font-bold text-gray-700 hover:bg-gray-100"
+              aria-label="Increase quantity"
+            >
+              <Plus size={16} />
+            </button>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="addToCart"
+            size="lg"
+            onClick={handleAddToCart}
+            disabled={!product.inStock || isAddingToCart}
+            className="flex-1 font-bold text-sm tracking-wide min-h-[48px]"
+          >
+            <ShoppingCart size={18} className="mr-2" />
+            {isAddingToCart ? "Adding..." : "Add to Cart"}
+          </Button>
+        )}
 
         <Button
           type="button"
@@ -390,5 +450,7 @@ export function ProductActions({ product }: ProductActionsProps) {
         )}
       </div>
     </div>
+    <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
+    </>
   );
 }

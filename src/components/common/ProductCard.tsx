@@ -1,16 +1,18 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { Heart, ShoppingCart, Check } from "lucide-react";
+import { Heart, ShoppingCart, Check, Minus, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { Product } from "@/types";
 import { PriceDisplay } from "@/components/common/PriceDisplay";
 import { RatingStars } from "@/components/common/RatingStars";
+import { LoginModal } from "@/components/common/LoginModal";
 import { Badge } from "@/components/ui/badge";
 import { useWishlistStore } from "@/store/useWishlistStore";
 import { useCartStore } from "@/store/useCartStore";
+import { useAuthStore } from "@/store/useAuthStore";
 import { formatPrice } from "@/utils/formatters";
 import { cn } from "@/lib/utils";
 
@@ -31,16 +33,23 @@ export function ProductCard({
   const isInWishlist = useWishlistStore((state) => state.isInWishlist(product.id));
   const toggleWishlist = useWishlistStore((state) => state.toggleItem);
   const addItemToCart = useCartStore((state) => state.addItem);
-  const isInCart = useCartStore((state) =>
-    state.items.some((i) => i.productId === product.id)
-  );
+  const updateCartQty = useCartStore((state) => state.updateQuantity);
+  const cartItems = useCartStore((state) => state.items);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
+  const isInCart = cartItems.some((i) => i.productId === product.id);
+  const cartItem = cartItems.find((i) => i.productId === product.id);
+  const [cartQty, setCartQty] = useState<number>(cartItem?.quantity || 1);
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [addedAnimation, setAddedAnimation] = React.useState(false);
 
   const handleQuickAdd = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!isAuthenticated) return;
+    if (cartQty >= Number(product.stock || 0)) return;
     addItemToCart(product, 1);
+    setCartQty((prev) => prev + 1);
     setAddedAnimation(true);
     setTimeout(() => setAddedAnimation(false), 1500);
   };
@@ -48,15 +57,44 @@ export function ProductCard({
   const handleBuyNow = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!isAuthenticated) {
+      setShowLoginModal(true);
+      return;
+    }
     if (!isInCart) {
       addItemToCart(product, 1);
     }
     router.push("/checkout");
   };
 
+  const handleDecreaseCartQty = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (cartQty <= 1) {
+      updateCartQty(product.id, 0);
+      setCartQty(0);
+      return;
+    }
+    setCartQty((prev) => prev - 1);
+    updateCartQty(product.id, cartQty - 1);
+  };
+
+  const handleIncreaseCartQty = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = cartQty + 1;
+    if (next > Number(product.stock || 0)) return;
+    setCartQty(next);
+    updateCartQty(product.id, next);
+  };
+
   const handleToggleWishlist = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    if (!isAuthenticated) {
+      setShowLoginModal(true);
+      return;
+    }
     toggleWishlist(product);
   };
 
@@ -149,34 +187,57 @@ export function ProductCard({
 
             {showQuickAdd && (
               <div className="flex items-center gap-2">
+                {!isAuthenticated ? null : isInCart ? (
+                  <div className="flex items-center border border-[#E0E0E0] rounded-xs bg-white w-fit">
+                    <button
+                      type="button"
+                      onClick={handleDecreaseCartQty}
+                      disabled={cartQty <= 1}
+                      className="px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                    >
+                      <Minus size={12} />
+                    </button>
+                    <span className="px-2 py-1 text-xs font-bold text-[#212121] min-w-[24px] text-center">
+                      {cartQty}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleIncreaseCartQty}
+                      className="px-2 py-1 text-xs text-gray-700 hover:bg-gray-50"
+                    >
+                      <Plus size={12} />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={handleQuickAdd}
+                    className={cn(
+                      "flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold transition-all active:scale-95 min-h-[36px]",
+                      addedAnimation || isInCart
+                        ? "bg-[#388E3C] text-white"
+                        : "bg-[#2874F0] text-white hover:bg-[#1259c7]"
+                    )}
+                  >
+                    {addedAnimation ? (
+                      <>
+                        <Check size={14} /> Added
+                      </>
+                    ) : isInCart ? (
+                      <>
+                        <Check size={14} /> In Cart
+                      </>
+                    ) : (
+                      <>
+                        <ShoppingCart size={14} /> Add to Cart
+                      </>
+                    )}
+                  </button>
+                )}
                 <button
                   onClick={handleBuyNow}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold transition-all active:scale-95 min-h-[36px] bg-[#FB641B] text-white hover:bg-[#e65a17]"
                 >
                   Buy Now
-                </button>
-                <button
-                  onClick={handleQuickAdd}
-                  className={cn(
-                    "flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-xs font-semibold transition-all active:scale-95 min-h-[36px]",
-                    addedAnimation || isInCart
-                      ? "bg-[#388E3C] text-white"
-                      : "bg-[#2874F0] text-white hover:bg-[#1259c7]"
-                  )}
-                >
-                  {addedAnimation ? (
-                    <>
-                      <Check size={14} /> Added
-                    </>
-                  ) : isInCart ? (
-                    <>
-                      <Check size={14} /> In Cart
-                    </>
-                  ) : (
-                    <>
-                      <ShoppingCart size={14} /> Add to Cart
-                    </>
-                  )}
                 </button>
               </div>
             )}
@@ -189,6 +250,7 @@ export function ProductCard({
   // Standard Vertical Flipkart-Style Card
   const discount = product.discountPercentage ?? (product.mrp > product.price ? Math.round(((product.mrp - product.price) / product.mrp) * 100) : 0);
   return (
+    <>
     <div
       className={cn(
         "group relative flex flex-col bg-white border border-[#E0E0E0] rounded-sm overflow-hidden hover:shadow-[0_2px_12px_rgba(0,0,0,0.12)] transition-shadow duration-200",
@@ -260,19 +322,41 @@ export function ProductCard({
         {/* Actions */}
         {showQuickAdd && (
           <div className="mt-2 grid grid-cols-2 gap-1.5">
-            <button
-              onClick={handleQuickAdd}
-              className={cn(
-                "h-8 rounded-sm text-[11px] sm:text-xs font-semibold transition-colors active:scale-[0.99] flex items-center justify-center gap-1",
-                addedAnimation || isInCart
-                  ? "bg-[#388E3C] text-white"
-                  : "bg-white border border-[#2874F0] text-[#2874F0] hover:bg-[#eaf2ff]"
-              )}
-              title={isInCart ? "Already in Cart" : "Add to Cart"}
-              aria-label="Add to cart"
-            >
-              {addedAnimation ? <><Check size={13} /> Added</> : isInCart ? <><Check size={13} /> In Cart</> : <><ShoppingCart size={13} /> Add</>}
-            </button>
+            {!isAuthenticated ? null : isInCart ? (
+              <div className="flex items-center border border-[#E0E0E0] rounded-xs bg-white">
+                <button
+                  type="button"
+                  onClick={handleDecreaseCartQty}
+                  className="px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  <Minus size={12} />
+                </button>
+                <span className="px-2 py-1.5 text-xs font-bold text-[#212121] min-w-[24px] text-center">
+                  {cartQty}
+                </span>
+                <button
+                  type="button"
+                  onClick={handleIncreaseCartQty}
+                  className="px-2 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+                >
+                  <Plus size={12} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleQuickAdd}
+                className={cn(
+                  "h-8 rounded-sm text-[11px] sm:text-xs font-semibold transition-colors active:scale-[0.99] flex items-center justify-center gap-1",
+                  addedAnimation || isInCart
+                    ? "bg-[#388E3C] text-white"
+                    : "bg-white border border-[#2874F0] text-[#2874F0] hover:bg-[#eaf2ff]"
+                )}
+                title={isInCart ? "Already in Cart" : "Add to Cart"}
+                aria-label="Add to cart"
+              >
+                {addedAnimation ? <><Check size={13} /> Added</> : isInCart ? <><Check size={13} /> In Cart</> : <><ShoppingCart size={13} /> Add</>}
+              </button>
+            )}
             <button
               onClick={handleBuyNow}
               className="h-8 rounded-sm text-[11px] sm:text-xs font-semibold bg-[#FB641B] text-white hover:bg-[#e65a17] transition-colors active:scale-[0.99]"
@@ -283,5 +367,7 @@ export function ProductCard({
         )}
       </div>
     </div>
+    <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
+    </>
   );
 }

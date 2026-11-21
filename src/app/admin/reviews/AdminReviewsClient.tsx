@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import React, { useState, useEffect, useMemo } from "react";
 import {
@@ -10,6 +10,9 @@ import {
   CheckCircle2,
   ThumbsUp,
   MessageSquare,
+  User,
+  Eye,
+  X,
 } from "lucide-react";
 import { Review } from "@/types";
 import { adminService } from "@/services/adminService";
@@ -22,6 +25,8 @@ export function AdminReviewsClient() {
   const [searchQuery, setSearchQuery] = useState("");
   const [ratingFilter, setRatingFilter] = useState<number>(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showDetails, setShowDetails] = useState(false);
+  const [detailsReview, setDetailsReview] = useState<Review | null>(null);
 
   const loadReviews = async () => {
     setLoading(true);
@@ -76,7 +81,9 @@ export function AdminReviewsClient() {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-black text-[#212121] tracking-tight">Customer Reviews</h1>
+            <h1 className="text-2xl font-black text-[#212121] tracking-tight">
+              Customer Reviews
+            </h1>
             <span className="bg-gray-200 text-gray-700 text-xs font-bold px-2 py-0.5 rounded-full">
               {filteredReviews.length} Reviews
             </span>
@@ -155,8 +162,12 @@ export function AdminReviewsClient() {
           {filteredReviews.map((r) => (
             <div key={r.id} className="p-4 sm:p-5 flex flex-col sm:flex-row items-start justify-between gap-4 hover:bg-gray-50/50 transition-colors">
               <div className="space-y-2 flex-1">
-                {/* Rating badge & title */}
-                <div className="flex items-center gap-2.5">
+                {/* Customer name & rating header */}
+                <div className="flex items-center gap-2.5 mb-1">
+                  <div className="flex items-center gap-2">
+                    <User size={14} className="text-[#2874F0] shrink-0" />
+                    <span className="font-bold text-sm text-[#212121]">{r.userName}</span>
+                  </div>
                   <span
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold text-white ${
                       r.rating >= 4
@@ -177,7 +188,6 @@ export function AdminReviewsClient() {
 
                 {/* User & meta */}
                 <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-400 pt-1">
-                  <span className="font-semibold text-gray-700">{r.userName}</span>
                   {r.isVerifiedPurchase && (
                     <span className="flex items-center gap-1 text-emerald-600 font-semibold">
                       <CheckCircle2 size={12} />
@@ -201,26 +211,134 @@ export function AdminReviewsClient() {
                   <span className="text-gray-500">
                     <span className="font-semibold text-gray-600">Product:</span>{" "}
                     <span className="text-gray-700">{r.productName || "Unknown Product"}</span>
-                    {r.productId ? <span className="font-mono text-[10px] text-gray-400 ml-1">({r.productId})</span> : null}
+                    {r.productId ? (
+                      <span className="font-mono text-[10px] text-gray-400 ml-1">({r.productId})</span>
+                    ) : null}
                   </span>
                 </div>
               </div>
 
-              {/* Delete Action */}
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={deletingId === r.id}
-                onClick={() => handleDelete(r.id)}
-                className="text-xs text-gray-400 hover:text-red-600 hover:border-red-200 shrink-0"
-              >
-                <Trash2 size={13} className="mr-1" />
-                Remove
-              </Button>
+              {/* Actions */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDetailsReview(r);
+                    setShowDetails(true);
+                  }}
+                  className="text-xs text-[#2874F0] font-semibold hover:underline cursor-pointer"
+                >
+                  <Eye size={13} className="mr-1" /> Details
+                </button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={deletingId === r.id}
+                  onClick={() => handleDelete(r.id)}
+                  className="text-xs text-gray-400 hover:text-red-600 hover:border-red-200 shrink-0"
+                >
+                  <Trash2 size={13} className="mr-1" />
+                  Remove
+                </Button>
+              </div>
             </div>
           ))}
         </div>
       )}
+
+      {/* ── Review Details Modal ─────────────────────────────────────────────── */}
+      {showDetails && detailsReview ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowDetails(false)}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-lg m-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-100 p-4">
+              <h2 className="text-base font-bold text-[#212121]">Review Details</h2>
+              <button
+                onClick={() => setShowDetails(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">
+                  Customer
+                </p>
+                <p className="text-sm font-semibold text-[#212121]">
+                  {detailsReview.userName}
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <span
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold text-white ${
+                    detailsReview.rating >= 4
+                      ? "bg-[#388E3C]"
+                      : detailsReview.rating === 3
+                        ? "bg-[#f59e0b]"
+                        : "bg-[#e53935]"
+                  }`}
+                >
+                  <span>{detailsReview.rating}</span>
+                  <Star size={11} className="fill-current" />
+                </span>
+                <span className="font-bold text-sm text-[#212121]">
+                  {detailsReview.title}
+                </span>
+                {detailsReview.isVerifiedPurchase && (
+                  <span className="text-xs text-emerald-600 font-semibold flex items-center gap-1">
+                    <CheckCircle2 size={12} /> Verified Buyer
+                  </span>
+                )}
+              </div>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-1">
+                  Comment
+                </p>
+                <p className="text-sm text-gray-700 leading-relaxed">
+                  {detailsReview.comment}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 text-[11px] text-gray-400">
+                <span>
+                  {detailsReview.createdAt
+                    ? new Date(detailsReview.createdAt).toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })
+                    : "Recently"}
+                </span>
+                <span className="text-gray-500">
+                  <span className="font-semibold text-gray-600">Product:</span>{" "}
+                  <span className="text-gray-700">{detailsReview.productName || "Unknown Product"}</span>
+                  {detailsReview.productId ? (
+                    <span className="font-mono text-[10px] text-gray-400 ml-1">({detailsReview.productId})</span>
+                  ) : null}
+                </span>
+                {detailsReview.helpfulCount > 0 && (
+                  <span className="flex items-center gap-1 text-gray-500">
+                    <ThumbsUp size={11} /> {detailsReview.helpfulCount} helpful votes
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="border-t border-gray-100 p-4 flex justify-end">
+              <Button
+                onClick={() => setShowDetails(false)}
+                className="text-xs font-bold text-[#2874F0] hover:bg-blue-50"
+              >
+                Close
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

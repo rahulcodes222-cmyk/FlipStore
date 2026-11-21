@@ -629,7 +629,7 @@ export const adminService = {
     return {
       totalRevenue,
       totalOrders: orders.length,
-      totalCustomers: customers.length + 2450, // simulated active base
+      totalCustomers: customers.length,
       totalProducts: products.length,
       salesChart,
       recentOrders: orders.slice(0, 5),

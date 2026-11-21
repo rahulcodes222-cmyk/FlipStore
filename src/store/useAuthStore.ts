@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist, createJSONStorage } from "zustand/middleware";
 import { User } from "@/types";
+import { useCartStore } from "./useCartStore";
+import { useWishlistStore } from "./useWishlistStore";
 
 interface AuthState {
   user: User | null;
@@ -26,6 +28,8 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         set({ user: null, isAuthenticated: false });
+        try { useCartStore.getState().clearCart(); } catch {}
+        try { useWishlistStore.getState().clearWishlist(); } catch {}
       },
 
       updateUser: (updates) => {

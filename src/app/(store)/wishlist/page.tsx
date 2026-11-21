@@ -6,6 +6,7 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useWishlistStore } from "@/store/useWishlistStore";
 import { useCartStore } from "@/store/useCartStore";
+import { useAuthStore } from "@/store/useAuthStore";
 import { useHydration } from "@/hooks/useHydration";
 import { EmptyState } from "@/components/common/EmptyState";
 import { PriceDisplay } from "@/components/common/PriceDisplay";
@@ -291,6 +292,7 @@ function WishlistItemCard({
 export default function WishlistPage() {
   const router = useRouter();
   const isHydrated = useHydration();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
   const wishlistItems = useWishlistStore((state) => state.items);
   const removeFromWishlist = useWishlistStore((state) => state.removeItem);
@@ -376,6 +378,26 @@ export default function WishlistPage() {
               <div key={i} className="animate-pulse h-64 bg-white rounded-sm border border-[#E0E0E0]" />
             ))}
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isHydrated) {
+    return null;
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="bg-[#F1F3F6] min-h-screen py-16 text-center">
+        <div className="max-w-[1280px] mx-auto px-4">
+          <EmptyState
+            preset="wishlist"
+            title="Please Log In to View Your Wishlist"
+            description="Your wishlist items are private to your account. Log in to see your saved items."
+            actionText="Sign In"
+            actionHref="/login?redirect=/wishlist"
+          />
         </div>
       </div>
     );
