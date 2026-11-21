@@ -453,6 +453,7 @@ export interface SellerRegisterFormStep1 {
 export interface SellerRegisterFormStep2 {
   businessName: string;
   businessType: string;
+  businessCategory: string;
   businessDescription: string;
   businessEmail: string;
   businessPhone: string;
@@ -473,6 +474,12 @@ export interface SellerRegisterFormStep4 {
   businessRegistration: string;
   identityFile?: File;
   identityPreview?: string | null;
+  panPreview?: string | null;
+  gstPreview?: string | null;
+  bankProofPreview?: string | null;
+  businessRegistrationProofPreview?: string | null;
+  fssaiPreview?: string | null;
+  trademarkPreview?: string | null;
 }
 
 export interface SellerRegisterFormStep5 {

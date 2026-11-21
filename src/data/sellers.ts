@@ -609,6 +609,7 @@ export const EMPTY_REGISTER_PAYLOAD: SellerRegisterPayload = {
   step2: {
     businessName: "",
     businessType: "",
+    businessCategory: "",
     businessDescription: "",
     businessEmail: "",
     businessPhone: "",
@@ -625,6 +626,13 @@ export const EMPTY_REGISTER_PAYLOAD: SellerRegisterPayload = {
     panNumber: "",
     gstNumber: "",
     businessRegistration: "",
+    panPreview: null,
+    gstPreview: null,
+    identityPreview: null,
+    bankProofPreview: null,
+    businessRegistrationProofPreview: null,
+    fssaiPreview: null,
+    trademarkPreview: null,
   },
   step5: {
     accountHolderName: "",

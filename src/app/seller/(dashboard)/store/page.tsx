@@ -1,14 +1,14 @@
 ﻿"use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Pencil } from "lucide-react";
+import { Upload, Image as ImageIcon } from "lucide-react";
 import { useHydration } from "@/hooks/useHydration";
 import { useSellerStore } from "@/store/useSellerStore";
 import { sellerStoreService } from "@/services";
 import type { Seller } from "@/types";
-import { StoreProfileForm } from "@/components/seller/StoreProfileForm";
 import { SellerStatusBadge } from "@/components/seller/SellerStatusBadge";
+import { Button } from "@/components/ui/button";
 
 export default function SellerStorePage() {
   const isHydrated = useHydration();
@@ -18,7 +18,12 @@ export default function SellerStorePage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [isEditing, setIsEditing] = useState(false);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [bannerPreview, setBannerPreview] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement | null>(null);
+  const bannerInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -27,7 +32,11 @@ export default function SellerStorePage() {
       setError("");
       try {
         const data = await sellerStoreService.getStoreProfile();
-        if (mounted) setSeller(data || currentSeller || null);
+        if (mounted) {
+          setSeller(data || currentSeller || null);
+          setLogoPreview((data || currentSeller)?.storeLogo || null);
+          setBannerPreview((data || currentSeller)?.storeBanner || null);
+        }
       } catch (err: any) {
         if (mounted) {
           setSeller(currentSeller || null);
@@ -43,27 +52,6 @@ export default function SellerStorePage() {
     };
   }, [currentSeller]);
 
-  const handleUploadImage = async (file: File) => {
-    const res = await sellerStoreService.uploadStoreImage(file);
-    return res.url;
-  };
-
-  const handleUpdate = async (data: any) => {
-    setMessage("");
-    setError("");
-    try {
-      const updated = await sellerStoreService.updateStore(data);
-      setSeller(updated);
-      updateSeller(updated);
-      setMessage("Store information updated.");
-      setIsEditing(false);
-    } catch (err: any) {
-      const msg = err?.message || "Update failed.";
-      setError(msg);
-      throw err;
-    }
-  };
-
   const handleToggleStatus = async () => {
     setMessage("");
     setError("");
@@ -74,6 +62,35 @@ export default function SellerStorePage() {
       setMessage(`Store status changed to ${updated.storeStatus}.`);
     } catch (err: any) {
       setError(err?.message || "Failed to change status.");
+    }
+  };
+
+  const handleImageUpload = async (type: "logo" | "banner", e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (type === "logo") setUploadingLogo(true);
+    else setUploadingBanner(true);
+    setMessage("");
+    setError("");
+    try {
+      const res = await sellerStoreService.uploadStoreImage(file);
+      const url = res.url;
+      if (type === "logo") {
+        setLogoPreview(url);
+        setSeller((prev: Seller | null) => prev ? { ...prev, storeLogo: url } : null);
+        updateSeller({ storeLogo: url });
+      } else {
+        setBannerPreview(url);
+        setSeller((prev: Seller | null) => prev ? { ...prev, storeBanner: url } : null);
+        updateSeller({ storeBanner: url });
+      }
+      setMessage(type === "logo" ? "Store logo updated." : "Store banner updated.");
+    } catch (err: any) {
+      setError(err?.message || "Failed to upload image.");
+    } finally {
+      if (type === "logo") setUploadingLogo(false);
+      else setUploadingBanner(false);
+      e.target.value = "";
     }
   };
 
@@ -116,60 +133,60 @@ export default function SellerStorePage() {
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#F0F0F0]">
           <div>
             <h2 className="text-sm font-bold text-[#212121]">Store Profile</h2>
-            <p className="text-xs text-[#878787] mt-0.5">View or edit your store details, description, and images.</p>
+            <p className="text-xs text-[#878787] mt-0.5">View store details and update logo/banner images.</p>
           </div>
-          {!isEditing && (
-            <button
-              type="button"
-              onClick={() => { setMessage(""); setError(""); setIsEditing(true); }}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2874F0] hover:underline"
-            >
-              <Pencil size={14} /> Edit Store
-            </button>
-          )}
         </div>
 
-        {!isEditing ? (
-          <div className="p-5 space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="sm:col-span-1 space-y-3">
-                <div>
-                  <p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider mb-1.5">Store Logo</p>
-                  <div className="w-24 h-24 rounded-full border border-[#E0E0E0] bg-[#F9FAFB] overflow-hidden flex items-center justify-center">
-                    {seller.storeLogo ? <img src={seller.storeLogo} alt="Store logo" className="w-full h-full object-cover" /> : <span className="text-xs text-[#878787]">No logo</span>}
-                  </div>
-                </div>
-                <div>
-                  <p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider mb-1.5">Store Banner</p>
-                  <div className="w-full h-24 rounded-sm border border-[#E0E0E0] bg-[#F9FAFB] overflow-hidden flex items-center justify-center">
-                    {seller.storeBanner ? <img src={seller.storeBanner} alt="Store banner" className="w-full h-full object-cover" /> : <span className="text-xs text-[#878787]">No banner</span>}
-                  </div>
+        <div className="p-5 space-y-5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="sm:col-span-1 space-y-3">
+              <div>
+                <p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider mb-1.5">Store Logo</p>
+                <div className="w-24 h-24 rounded-full border border-[#E0E0E0] bg-[#F9FAFB] overflow-hidden flex items-center justify-center relative group">
+                  {seller.storeLogo ? <img src={seller.storeLogo} alt="Store logo" className="w-full h-full object-cover" /> : <span className="text-xs text-[#878787]">No logo</span>}
+                  <input ref={logoInputRef} id="logo-input" type="file" accept="image/*" onChange={(e) => handleImageUpload("logo", e)} className="sr-only" />
+                  <button type="button" onClick={() => logoInputRef.current?.click()} className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <div className="w-24 h-24 flex items-center justify-center bg-white/80 backdrop-blur-sm">
+                      <Upload size={16} className="text-[#2874F0]" />
+                      <span className="text-[10px] font-bold text-[#2874F0] mt-1">{uploadingLogo ? "Uploading..." : "Change"}</span>
+                    </div>
+                  </button>
+                  <button type="button" onClick={() => logoInputRef.current?.click()} className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[11px] font-medium text-[#2874F0] hover:underline pointer-events-none group-hover:pointer-events-auto">
+                    Upload Store Logo
+                  </button>
                 </div>
               </div>
-              <div className="sm:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider">Store Name</p><p className="text-sm text-[#212121] mt-1">{seller.storeName || "—"}</p></div>
-                <div><p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider">Store URL / Slug</p><p className="text-sm text-[#212121] mt-1">{seller.storeSlug || "—"}</p></div>
-                <div><p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider">Business Category</p><p className="text-sm text-[#212121] mt-1">{seller.businessCategory || "—"}</p></div>
-                <div><p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider">Contact Email</p><p className="text-sm text-[#212121] mt-1 break-all">{seller.businessEmail || "—"}</p></div>
-                <div><p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider">Contact Phone</p><p className="text-sm text-[#212121] mt-1">{seller.businessPhone || "—"}</p></div>
-                <div className="md:col-span-2">
-                  <p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider">Store Description</p>
-                  <p className="text-sm text-[#212121] mt-1 whitespace-pre-wrap">{seller.storeDescription || "No description added yet."}</p>
+              <div className="space-y-3">
+                <div className="flex flex-col items-center gap-2">
+                  <div className="w-full h-24 rounded-sm border-2 border-dashed border-[#E0E0E0] bg-[#F9FAFB] overflow-hidden relative group">
+                    {seller.storeBanner ? <img src={seller.storeBanner} alt="Store banner" className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center"><ImageIcon size={20} className="text-[#878787]" /></div>}
+                    <input ref={bannerInputRef} id="banner-input" type="file" accept="image/*" onChange={(e) => handleImageUpload("banner", e)} className="sr-only" />
+                    <button type="button" onClick={() => bannerInputRef.current?.click()} className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <div className="w-full h-full flex items-center justify-center bg-white/80 backdrop-blur-sm">
+                        <Upload size={16} className="text-[#2874F0]" />
+                        <span className="text-[10px] font-bold text-[#2874F0] mt-1">{uploadingBanner ? "Uploading..." : "Change"}</span>
+                      </div>
+                    </button>
+                    <button type="button" onClick={() => bannerInputRef.current?.click()} className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[11px] font-medium text-[#2874F0] hover:underline pointer-events-none group-hover:pointer-events-auto">
+                      Upload Store Banner
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
+            <div className="sm:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div><p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider">Store Name</p><p className="text-sm text-[#212121] mt-1">{seller.storeName || "—"}</p></div>
+              <div><p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider">Store URL / Slug</p><p className="text-sm text-[#212121] mt-1">{seller.storeSlug || "—"}</p></div>
+              <div><p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider">Business Category</p><p className="text-sm text-[#212121] mt-1">{seller.businessCategory || "—"}</p></div>
+              <div><p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider">Contact Email</p><p className="text-sm text-[#212121] mt-1 break-all">{seller.businessEmail || "—"}</p></div>
+              <div><p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider">Contact Phone</p><p className="text-sm text-[#212121] mt-1">{seller.businessPhone || "—"}</p></div>
+              <div className="md:col-span-2">
+                <p className="text-[11px] font-bold text-[#878787] uppercase tracking-wider">Store Description</p>
+                <p className="text-sm text-[#212121] mt-1 whitespace-pre-wrap">{seller.storeDescription || "No description added yet."}</p>
+              </div>
+            </div>
           </div>
-        ) : (
-          <div className="p-5">
-            <StoreProfileForm
-              seller={seller}
-              onUpdate={handleUpdate}
-              onUploadImage={handleUploadImage}
-              onCancel={() => { setError(""); setIsEditing(false); }}
-              submitLabel="Save Changes"
-            />
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );

@@ -27,20 +27,9 @@ export default function SellerProfilePage() {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [sellerData, setSellerData] = useState<Seller | null>(null);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    storeName: "",
-    storeDescription: "",
-    businessEmail: "",
-    businessPhone: "",
-  });
 
   useEffect(() => {
     let mounted = true;
@@ -52,15 +41,6 @@ export default function SellerProfilePage() {
         if (mounted) {
           const merged = data || currentSeller || null;
           setSellerData(merged);
-          setForm({
-            name: merged?.name || "",
-            email: merged?.email || "",
-            phone: merged?.phone || "",
-            storeName: merged?.storeName || "",
-            storeDescription: merged?.storeDescription || "",
-            businessEmail: (merged as any)?.businessEmail || merged?.email || "",
-            businessPhone: (merged as any)?.businessPhone || merged?.phone || "",
-          });
         }
       } catch (err: any) {
         if (mounted) {
@@ -101,32 +81,6 @@ export default function SellerProfilePage() {
     } finally {
       setUploadingAvatar(false);
       e.target.value = "";
-    }
-  };
-
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSaving(true);
-    setMessage("");
-    setError("");
-    try {
-      const updated = await sellerProfileService.updateProfile({
-        name: form.name,
-        email: form.email,
-        phone: form.phone,
-        storeName: form.storeName,
-        storeDescription: form.storeDescription,
-        businessEmail: form.businessEmail,
-        businessPhone: form.businessPhone,
-      } as any);
-      updateSeller(updated);
-      setSellerData(updated);
-      setEditing(false);
-      setMessage("Profile updated successfully.");
-    } catch (err: any) {
-      setError(err?.message || "Update failed.");
-    } finally {
-      setSaving(false);
     }
   };
 
@@ -176,37 +130,20 @@ export default function SellerProfilePage() {
         <div className="rounded-sm border border-[#E0E0E0] bg-white p-5 shadow-sm">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold text-[#212121]">Profile & Store Contact</h2>
-            {!editing && <Button variant="outline" onClick={() => setEditing(true)} className="w-auto h-8 text-xs">Edit</Button>}
           </div>
-          {editing ? (
-            <form onSubmit={handleSave} className="space-y-4">
-              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Full Name</label><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]" /></div>
-              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Email</label><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]" /></div>
-              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Mobile</label><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]" /></div>
-              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Store Name</label><input value={form.storeName} onChange={(e) => setForm({ ...form, storeName: e.target.value })} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]" /></div>
-              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Store Description</label><textarea value={form.storeDescription} onChange={(e) => setForm({ ...form, storeDescription: e.target.value })} rows={3} className="flex w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]" /></div>
-              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Business Email</label><input value={form.businessEmail} onChange={(e) => setForm({ ...form, businessEmail: e.target.value })} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]" /></div>
-              <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Business Phone</label><input value={form.businessPhone} onChange={(e) => setForm({ ...form, businessPhone: e.target.value })} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]" /></div>
-              <div className="flex gap-2">
-                <Button type="submit" variant="primary" isLoading={saving} className="w-auto">Save Changes</Button>
-                <Button type="button" variant="outline" onClick={() => setEditing(false)} className="w-auto">Cancel</Button>
-              </div>
-            </form>
-          ) : (
-            <div>
-              <DetailRow label="Seller ID" value={sellerProfile.sellerId || (sellerProfile as any).id} />
-              <DetailRow label="Name" value={sellerProfile.name} />
-              <DetailRow label="Email" value={sellerProfile.email} />
-              <DetailRow label="Phone" value={sellerProfile.phone} />
-              <DetailRow label="Store Name" value={sellerProfile.storeName} />
-              <DetailRow label="Store Slug" value={sellerProfile.storeSlug} />
-              <DetailRow label="Store Description" value={sellerProfile.storeDescription} />
-              <DetailRow label="Business Email" value={(sellerProfile as any).businessEmail} />
-              <DetailRow label="Business Phone" value={(sellerProfile as any).businessPhone} />
-              <DetailRow label="Joined" value={sellerProfile.joinedAt ? new Date(sellerProfile.joinedAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : undefined} />
-              <DetailRow label="Application Status" value={(details.applicationStatus || sellerProfile.verificationStatus) as any} />
-            </div>
-          )}
+          <div>
+            <DetailRow label="Seller ID" value={sellerProfile.sellerId || (sellerProfile as any).id} />
+            <DetailRow label="Name" value={sellerProfile.name} />
+            <DetailRow label="Email" value={sellerProfile.email} />
+            <DetailRow label="Phone" value={sellerProfile.phone} />
+            <DetailRow label="Store Name" value={sellerProfile.storeName} />
+            <DetailRow label="Store Slug" value={sellerProfile.storeSlug} />
+            <DetailRow label="Store Description" value={sellerProfile.storeDescription} />
+            <DetailRow label="Business Email" value={(sellerProfile as any).businessEmail} />
+            <DetailRow label="Business Phone" value={(sellerProfile as any).businessPhone} />
+            <DetailRow label="Joined" value={sellerProfile.joinedAt ? new Date(sellerProfile.joinedAt).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" }) : undefined} />
+            <DetailRow label="Application Status" value={(details.applicationStatus || sellerProfile.verificationStatus) as any} />
+          </div>
         </div>
 
         <div className="space-y-6">

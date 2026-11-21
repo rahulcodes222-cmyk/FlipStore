@@ -47,6 +47,7 @@ const step2Schema = z.object({
     .max(100, "Business name is too long")
     .regex(/^[A-Za-z0-9][A-Za-z0-9\s&.,'()\/-]*$/, "Enter a valid business name"),
   businessType: z.string().min(1, "Select a business type"),
+  businessCategory: z.string().min(1, "Select a business category"),
   businessDescription: z.string().trim().min(10, "Description must be at least 10 characters").max(1000, "Description is too long"),
   businessEmail: z.string().trim().toLowerCase().email("Invalid business email"),
   businessPhone: z.string().regex(/^[6-9]\d{9}$/, "Enter a valid 10-digit business phone number"),
@@ -80,6 +81,13 @@ const step4Schema = z.object({
     .min(5, "Business registration details required")
     .max(30, "Registration details are too long")
     .regex(/^[A-Za-z0-9\s\/-]+$/, "Enter valid business registration details (letters, numbers, - or /)"),
+  panPreview: z.string().nullable().optional(),
+  gstPreview: z.string().nullable().optional(),
+  identityPreview: z.string().nullable().optional(),
+  bankProofPreview: z.string().nullable().optional(),
+  businessRegistrationProofPreview: z.string().nullable().optional(),
+  fssaiPreview: z.string().nullable().optional(),
+  trademarkPreview: z.string().nullable().optional(),
 });
 
 const step5Schema = z.object({
@@ -114,6 +122,12 @@ export default function SellerRegisterPage() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [identityPreview, setIdentityPreview] = useState<string | null>(null);
+  const [panPreview, setPanPreview] = useState<string | null>(null);
+  const [gstPreview, setGstPreview] = useState<string | null>(null);
+  const [bankProofPreview, setBankProofPreview] = useState<string | null>(null);
+  const [businessRegistrationProofPreview, setBusinessRegistrationProofPreview] = useState<string | null>(null);
+  const [fssaiPreview, setFssaiPreview] = useState<string | null>(null);
+  const [trademarkPreview, setTrademarkPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
@@ -153,7 +167,16 @@ export default function SellerRegisterPage() {
         step1: form1.getValues(),
         step2: form2.getValues(),
         step3: form3.getValues(),
-        step4: { ...form4.getValues(), identityPreview },
+        step4: {
+          ...form4.getValues(),
+          identityPreview,
+          panPreview,
+          gstPreview,
+          bankProofPreview,
+          businessRegistrationProofPreview,
+          fssaiPreview,
+          trademarkPreview,
+        },
         step5: form5.getValues(),
       };
       await sellerAuthService.register(payload);
@@ -220,11 +243,11 @@ export default function SellerRegisterPage() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="min-h-[420px] sm:h-[520px] overflow-y-auto sm:overflow-hidden relative">
+            <div className="min-h-[420px] sm:h-[520px] overflow-y-auto relative max-h-[85vh]">
               {currentStep === 0 && <Step1Form form={form1} />}
               {currentStep === 1 && <Step2Form form={form2} />}
               {currentStep === 2 && <Step3Form form={form3} />}
-              {currentStep === 3 && <Step4Form form={form4} onImageChange={setIdentityPreview} preview={identityPreview} />}
+              {currentStep === 3 && <Step4Form form={form4} businessCategory={form2.getValues("businessCategory")} setIdentityPreview={setIdentityPreview} identityPreview={identityPreview} setPanPreview={setPanPreview} panPreview={panPreview} setGstPreview={setGstPreview} gstPreview={gstPreview} setBankProofPreview={setBankProofPreview} bankProofPreview={bankProofPreview} setBusinessRegistrationProofPreview={setBusinessRegistrationProofPreview} businessRegistrationProofPreview={businessRegistrationProofPreview} setFssaiPreview={setFssaiPreview} fssaiPreview={fssaiPreview} setTrademarkPreview={setTrademarkPreview} trademarkPreview={trademarkPreview} />}
               {currentStep === 4 && <Step5Form form={form5} />}
               {currentStep === 5 && <Step6Form form1={form1} form2={form2} form3={form3} form4={form4} form5={form5} />}
             </div>
@@ -342,6 +365,23 @@ function Step2Form({ form }: { form: ReturnType<typeof useForm<Step2>> }) {
         {errors.businessType && <p className="text-[10px] text-[#E53935]">{errors.businessType.message}</p>}
       </div>
       <div className="space-y-1.5">
+        <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Business Category</label>
+        <select {...register("businessCategory")} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]">
+          <option value="">Select business category</option>
+          <option value="Electronics">Electronics</option>
+          <option value="Fashion">Fashion</option>
+          <option value="Home & Furniture">Home & Furniture</option>
+          <option value="Appliances">Appliances</option>
+          <option value="Beauty">Beauty</option>
+          <option value="Grocery">Grocery</option>
+          <option value="Health">Health</option>
+          <option value="Food">Food</option>
+          <option value="Toys & Baby">Toys & Baby</option>
+          <option value="Other">Other</option>
+        </select>
+        {errors.businessCategory && <p className="text-[10px] text-[#E53935]">{errors.businessCategory.message}</p>}
+      </div>
+      <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Business Description</label>
         <textarea
           {...register("businessDescription")}
@@ -452,8 +492,73 @@ function Step3Form({ form }: { form: ReturnType<typeof useForm<Step3>> }) {
   );
 }
 
-function Step4Form({ form, onImageChange, preview }: { form: ReturnType<typeof useForm<Step4>>; onImageChange: (v: string | null) => void; preview: string | null }) {
+function Step4Form({ form, businessCategory, setIdentityPreview, identityPreview, setPanPreview, panPreview, setGstPreview, gstPreview, setBankProofPreview, bankProofPreview, setBusinessRegistrationProofPreview, businessRegistrationProofPreview, setFssaiPreview, fssaiPreview, setTrademarkPreview, trademarkPreview }: { form: ReturnType<typeof useForm<Step4>>; businessCategory: string; setIdentityPreview: (v: string | null) => void; identityPreview: string | null; setPanPreview: (v: string | null) => void; panPreview: string | null; setGstPreview: (v: string | null) => void; gstPreview: string | null; setBankProofPreview: (v: string | null) => void; bankProofPreview: string | null; setBusinessRegistrationProofPreview: (v: string | null) => void; businessRegistrationProofPreview: string | null; setFssaiPreview: (v: string | null) => void; fssaiPreview: string | null; setTrademarkPreview: (v: string | null) => void; trademarkPreview: string | null }) {
   const { register, setValue, formState: { errors } } = form;
+  const showFssai = ["Health", "Food", "Grocery"].includes(businessCategory);
+  const [uploading, setUploading] = useState<Record<string, boolean>>({});
+  const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
+
+  const uploadToCloudinary = async (file: File, folder: string): Promise<string> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("folder", folder);
+    const res = await fetch(`${API_BASE}/api/v1/uploads/public`, {
+      method: "POST",
+      body: formData,
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) {
+      throw new Error(json?.message || json?.error?.message || "Upload failed.");
+    }
+    return json.data.url;
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>, setter: (v: string | null) => void, label: string, folder: string) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading((prev) => ({ ...prev, [label]: true }));
+    try {
+      const url = await uploadToCloudinary(file, folder);
+      setter(url);
+    } catch (err: any) {
+      console.error(err);
+      alert(err?.message || "Upload failed. Please try again.");
+    } finally {
+      setUploading((prev) => ({ ...prev, [label]: false }));
+    }
+  };
+
+  const renderUpload = (label: string, accept: string, preview: string | null, setter: (v: string | null) => void, helperText: string, optional = false) => (
+    <div className="space-y-1.5">
+      <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">{label}{optional ? " (Optional)" : ""}</label>
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-32 h-32 rounded-full border-2 border-dashed border-[#E0E0E0] bg-[#F9FAFB] flex items-center justify-center relative overflow-hidden group">
+          {preview ? (
+            <img src={preview} alt="Uploaded" className="w-full h-full object-cover" />
+          ) : (
+            <FileText size={24} className="text-[#878787]" />
+          )}
+          <input
+            id={`file-${label.toLowerCase().replace(/\s+/g, '-')}`}
+            type="file"
+            accept={accept}
+            onChange={(e) => handleFileChange(e, setter, label, "store")}
+            className="sr-only"
+          />
+          <button
+            type="button"
+            onClick={() => (document.getElementById(`file-${label.toLowerCase().replace(/\s+/g, '-')}`) as HTMLInputElement).click()}
+            disabled={uploading[label]}
+            className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+          >
+            {uploading[label] ? "Uploading…" : "Upload"}
+          </button>
+        </div>
+        <p className="text-xs text-[#878787] text-center">{helperText}</p>
+      </div>
+    </div>
+  );
+
   return (
     <div className="p-8 space-y-5">
       <div className="space-y-1.5">
@@ -466,6 +571,13 @@ function Step4Form({ form, onImageChange, preview }: { form: ReturnType<typeof u
         />
         {errors.panNumber && <p className="text-[10px] text-[#E53935]">{errors.panNumber.message}</p>}
       </div>
+      {renderUpload(
+        "PAN Card Upload",
+        "image/*,application/pdf",
+        panPreview,
+        setPanPreview,
+        "Upload PAN card document"
+      )}
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">GST Number</label>
         <Input
@@ -476,6 +588,13 @@ function Step4Form({ form, onImageChange, preview }: { form: ReturnType<typeof u
         />
         {errors.gstNumber && <p className="text-[10px] text-[#E53935]">{errors.gstNumber.message}</p>}
       </div>
+      {renderUpload(
+        "GST Registration Certificate",
+        "image/*,application/pdf",
+        gstPreview,
+        setGstPreview,
+        "Upload GST registration certificate"
+      )}
       <div className="space-y-1.5">
         <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Business Registration Details</label>
         <Input
@@ -486,38 +605,49 @@ function Step4Form({ form, onImageChange, preview }: { form: ReturnType<typeof u
         />
         {errors.businessRegistration && <p className="text-[10px] text-[#E53935]">{errors.businessRegistration.message}</p>}
       </div>
-      <div className="space-y-1.5">
-        <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Identity Verification Upload</label>
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-32 h-32 rounded-full border-2 border-dashed border-[#E0E0E0] bg-[#F9FAFB] flex items-center justify-center relative overflow-hidden group">
-            {preview ? (
-              <img src={preview} alt="Identity" className="w-full h-full object-cover" />
-            ) : (
-              <FileText size={24} className="text-[#878787]" />
-            )}
-            <input
-              id="id-file"
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) onImageChange(URL.createObjectURL(file));
-              }}
-              className="sr-only"
-            />
-            <button
-              type="button"
-              onClick={() => (document.getElementById("id-file") as HTMLInputElement).click()}
-              className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-            >
-              Upload
-            </button>
-          </div>
-          <p className="text-xs text-[#878787] text-center">
-            Mock upload only. No real documents are stored.
-          </p>
+      {renderUpload(
+        "Identity & Address Proof (Aadhar / Passport / Voter Card)",
+        "image/*,application/pdf",
+        identityPreview,
+        setIdentityPreview,
+        "Upload government-issued identity and address proof"
+      )}
+      {renderUpload(
+        "Bank Account Details (Cancelled Cheque / Passbook / Statement)",
+        "image/*,application/pdf",
+        bankProofPreview,
+        setBankProofPreview,
+        "Upload cancelled cheque, passbook, or bank statement"
+      )}
+      {renderUpload(
+        "Business Registration Proof (NOC etc.)",
+        "image/*,application/pdf",
+        businessRegistrationProofPreview,
+        setBusinessRegistrationProofPreview,
+        "Upload business registration certificate or NOC (optional)",
+        true
+      )}
+      {showFssai && (
+        <div className="space-y-1.5">
+          <label className="text-xs font-bold text-[#878787] uppercase tracking-wider">FSSAI Licence</label>
+          <p className="text-xs text-[#878787] text-center">Required for health, food, and grocery categories</p>
+          {renderUpload(
+            "FSSAI Licence",
+            "image/*,application/pdf",
+            fssaiPreview,
+            setFssaiPreview,
+            "Upload FSSAI food licence"
+          )}
         </div>
-      </div>
+      )}
+      {renderUpload(
+        "Trademark / Brand Authorization Letter",
+        "image/*,application/pdf",
+        trademarkPreview,
+        setTrademarkPreview,
+        "Upload trademark or brand authorization letter (optional)",
+        true
+      )}
     </div>
   );
 }

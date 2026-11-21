@@ -133,9 +133,15 @@ function mapRegisterPayload(payload: SellerRegisterPayload) {
       accountNumber: s5.accountNumber,
       ifscCode: s5.ifscCode,
     },
-    documents: s4.identityPreview
-      ? [{ type: "identity_proof", fileName: "identity-upload", fileUrl: s4.identityPreview, mimeType: "image/*" }]
-      : [],
+    documents: [
+      s4.panPreview ? { type: "pan_card", fileName: "pan-card-upload", fileUrl: s4.panPreview, mimeType: "image/*" } : null,
+      s4.gstPreview ? { type: "gst_certificate", fileName: "gst-certificate-upload", fileUrl: s4.gstPreview, mimeType: "image/*" } : null,
+      s4.identityPreview ? { type: "identity_proof", fileName: "identity-upload", fileUrl: s4.identityPreview, mimeType: "image/*" } : null,
+      s4.bankProofPreview ? { type: "bank_proof", fileName: "bank-proof-upload", fileUrl: s4.bankProofPreview, mimeType: "image/*" } : null,
+      s4.businessRegistrationProofPreview ? { type: "business_registration_proof", fileName: "business-registration-upload", fileUrl: s4.businessRegistrationProofPreview, mimeType: "image/*" } : null,
+      s4.fssaiPreview ? { type: "fssai_licence", fileName: "fssai-licence-upload", fileUrl: s4.fssaiPreview, mimeType: "image/*" } : null,
+      s4.trademarkPreview ? { type: "trademark_authorization", fileName: "trademark-authorization-upload", fileUrl: s4.trademarkPreview, mimeType: "image/*" } : null,
+    ].filter(Boolean),
     submit: true,
   };
 }
