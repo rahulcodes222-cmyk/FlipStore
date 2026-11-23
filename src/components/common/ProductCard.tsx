@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Heart, ShoppingCart, Check, Minus, Plus } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Product } from "@/types";
 import { PriceDisplay } from "@/components/common/PriceDisplay";
 import { RatingStars } from "@/components/common/RatingStars";
@@ -30,6 +30,7 @@ export function ProductCard({
   className,
 }: ProductCardProps) {
   const router = useRouter();
+  const currentPath = usePathname();
   const isInWishlist = useWishlistStore((state) => state.isInWishlist(product.id));
   const toggleWishlist = useWishlistStore((state) => state.toggleItem);
   const addItemToCart = useCartStore((state) => state.addItem);
@@ -57,6 +58,7 @@ export function ProductCard({
   const handleBuyNow = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    const productUrl = `/product/${product.slug}`;
     if (!isAuthenticated) {
       setShowLoginModal(true);
       return;
@@ -64,7 +66,7 @@ export function ProductCard({
     if (!isInCart) {
       addItemToCart(product, 1);
     }
-    router.push("/checkout");
+    router.push(productUrl);
   };
 
   const handleDecreaseCartQty = (e: React.MouseEvent) => {
@@ -367,7 +369,7 @@ export function ProductCard({
         )}
       </div>
     </div>
-    <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
+    <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} returnUrl={`/product/${product.slug}`} />
     </>
   );
 }

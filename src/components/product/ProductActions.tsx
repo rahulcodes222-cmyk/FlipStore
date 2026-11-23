@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Product } from "@/types";
 import { useCartStore } from "@/store/useCartStore";
 import { useWishlistStore } from "@/store/useWishlistStore";
@@ -29,6 +29,7 @@ interface ProductActionsProps {
 
 export function ProductActions({ product }: ProductActionsProps) {
   const router = useRouter();
+  const currentPath = usePathname();
   const { toast } = useToast();
   const addItem = useCartStore((state) => state.addItem);
   const updateCartQty = useCartStore((state) => state.updateQuantity);
@@ -147,7 +148,7 @@ export function ProductActions({ product }: ProductActionsProps) {
       quantity,
       Object.keys(selectedVariants).length > 0 ? selectedVariants : undefined
     );
-    router.push("/checkout");
+    router.push(`/product/${product.slug}`);
   };
 
   const handleToggleWishlist = () => {
@@ -450,7 +451,7 @@ export function ProductActions({ product }: ProductActionsProps) {
         )}
       </div>
     </div>
-    <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} />
+    <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} returnUrl={`/product/${product.slug}`} />
     </>
   );
 }
