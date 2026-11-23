@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, User, MapPin, RefreshCcw } from "lucide-react";
+import { ArrowLeft, User, MapPin, RefreshCcw, Download } from "lucide-react";
 import { useHydration } from "@/hooks/useHydration";
 import { useSellerStore } from "@/store/useSellerStore";
 import { sellerOrderService } from "@/services";
@@ -173,6 +173,29 @@ export default function SellerOrderDetailPage() {
               ) : (
                 <p className="text-xs text-[#878787]">No further status changes available.</p>
               )}
+              {order.orderStatus === "CONFIRMED" || order.orderStatus === "SHIPPED" || order.orderStatus === "OUT_FOR_DELIVERY" || order.orderStatus === "DELIVERED" ? (
+                <div className="space-y-2 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sellerOrderService.downloadInvoice(order.id).then((blob) => {
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `invoice-${order.orderNumber || order.id}.pdf`;
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        URL.revokeObjectURL(url);
+                      }).catch(() => error("Failed to download invoice"));
+                    }}
+                    className="w-full h-auto min-h-10 py-2 px-3 text-left justify-between gap-3 whitespace-normal border border-[#E0E0E0] rounded-sm text-sm text-[#2874F0] hover:bg-[#F1F3F6] flex items-center"
+                  >
+                    <Download size={14} className="shrink-0" />
+                    <span>Download Invoice</span>
+                  </button>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 

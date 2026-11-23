@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search } from "lucide-react";
+import { Search, Download } from "lucide-react";
 import { useHydration } from "@/hooks/useHydration";
 import { useSellerStore } from "@/store/useSellerStore";
 import { sellerDashboardService, sellerOrderService } from "@/services";
@@ -178,22 +178,20 @@ export default function SellerOrdersPage() {
             <thead className="border-b border-[#F0F0F0] bg-[#F9FAFB]">
               <tr>
                 <th className="px-4 py-3 text-left text-[10px] font-bold text-[#878787] uppercase">Order ID</th>
-                <th className="px-4 py-3 text-left text-[10px] font-bold text-[#878787] uppercase">Customer</th>
                 <th className="px-4 py-3 text-left text-[10px] font-bold text-[#878787] uppercase">Product</th>
                 <th className="px-4 py-3 text-left text-[10px] font-bold text-[#878787] uppercase">Date</th>
                 <th className="px-4 py-3 text-left text-[10px] font-bold text-[#878787] uppercase">Qty</th>
                 <th className="px-4 py-3 text-left text-[10px] font-bold text-[#878787] uppercase">Amount</th>
                 <th className="px-4 py-3 text-left text-[10px] font-bold text-[#878787] uppercase">Payment</th>
                 <th className="px-4 py-3 text-left text-[10px] font-bold text-[#878787] uppercase">Status</th>
-                <th className="px-4 py-3 text-left text-[10px] font-bold text-[#878787] uppercase">Update Status</th>
                 <th className="px-4 py-3 text-left text-[10px] font-bold text-[#878787] uppercase">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#F0F0F0]">
               {loading ? (
-                <tr><td colSpan={10} className="px-4 py-8 text-center"><div className="h-24 rounded-sm bg-[#E8E8E8] animate-skeleton w-3/4 mx-auto" /></td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center"><div className="h-24 rounded-sm bg-[#E8E8E8] animate-skeleton w-3/4 mx-auto" /></td></tr>
               ) : filteredOrders.length === 0 ? (
-                <tr><td colSpan={10} className="px-4 py-8 text-center"><p className="text-sm text-[#878787]">No orders found.</p></td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center"><p className="text-sm text-[#878787]">No orders found.</p></td></tr>
               ) : (
                 filteredOrders.map((order) => {
                   const next = NEXT_ACTIONS[order.orderStatus] || [];
@@ -203,12 +201,6 @@ export default function SellerOrdersPage() {
                       <td className="px-4 py-3">
                         <div className="text-sm font-medium text-[#212121]">{order.orderNumber}</div>
                         <div className="text-[10px] text-[#878787]">{order.id}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
-                          {order.customerAvatar ? <img src={order.customerAvatar} alt="" className="w-7 h-7 rounded-full object-cover border border-[#E0E0E0]" /> : <div className="w-7 h-7 rounded-full bg-[#F1F3F6] flex items-center justify-center text-[10px] font-bold text-[#878787]">{order.customerName.charAt(0)}</div>}
-                          <div className="text-sm font-medium text-[#212121]">{order.customerName}</div>
-                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2.5">
@@ -222,32 +214,53 @@ export default function SellerOrdersPage() {
                       <td className="px-4 py-3"><span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold border", PAYMENT_STATUS_CONFIG[order.paymentStatus])}>{labelStatus(order.paymentStatus)}</span></td>
                       <td className="px-4 py-3"><span className={cn("inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-semibold border", ORDER_STATUS_CONFIG[order.orderStatus])}>{labelStatus(order.orderStatus)}</span></td>
                       <td className="px-4 py-3">
-                        {next.length > 0 ? (
-                          <div className="flex items-center gap-2">
-                            <select
-                              value={draftStatus[order.id] || ""}
-                              onChange={(e) => setDraftStatus((prev) => ({ ...prev, [order.id]: e.target.value as SellerOrderStatus }))}
-                              disabled={busy}
-                              className="h-8 rounded-sm border border-[#D5D5D5] bg-white px-2 text-xs text-[#212121] focus:outline-none focus:border-[#2874F0] disabled:opacity-60"
-                            >
-                              <option value="">Select status</option>
-                              {next.map((s) => <option key={s} value={s}>{labelStatus(s)}</option>)}
-                            </select>
+                        <div className="flex flex-col gap-2">
+                          {next.length > 0 ? (
+                            <div className="flex items-center gap-2">
+                              <select
+                                value={draftStatus[order.id] || ""}
+                                onChange={(e) => setDraftStatus((prev) => ({ ...prev, [order.id]: e.target.value as SellerOrderStatus }))}
+                                disabled={busy}
+                                className="h-8 rounded-sm border border-[#D5D5D5] bg-white px-2 text-xs text-[#212121] focus:outline-none focus:border-[#2874F0] disabled:opacity-60"
+                              >
+                                <option value="">Select status</option>
+                                {next.map((s) => <option key={s} value={s}>{labelStatus(s)}</option>)}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateStatus(order.id, order.orderStatus)}
+                                disabled={busy || !draftStatus[order.id]}
+                                className="h-8 px-3 rounded-sm bg-[#2874F0] text-white text-xs font-semibold hover:bg-[#1f63d1] disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                {busy ? "Updating..." : "Update"}
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="text-[11px] text-[#878787]">No actions</span>
+                          )}
+                          <Link href={`/seller/orders/${order.id}`} className="text-[#2874F0] text-xs font-medium hover:underline">View Details</Link>
+                          {order.orderStatus === "CONFIRMED" || order.orderStatus === "SHIPPED" || order.orderStatus === "OUT_FOR_DELIVERY" || order.orderStatus === "DELIVERED" ? (
                             <button
                               type="button"
-                              onClick={() => handleUpdateStatus(order.id, order.orderStatus)}
-                              disabled={busy || !draftStatus[order.id]}
-                              className="h-8 px-3 rounded-sm bg-[#2874F0] text-white text-xs font-semibold hover:bg-[#1f63d1] disabled:opacity-50 disabled:cursor-not-allowed"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                sellerOrderService.downloadInvoice(order.id).then((blob) => {
+                                  const url = URL.createObjectURL(blob);
+                                  const a = document.createElement("a");
+                                  a.href = url;
+                                  a.download = `invoice-${order.orderNumber || order.id}.pdf`;
+                                  document.body.appendChild(a);
+                                  a.click();
+                                  document.body.removeChild(a);
+                                  URL.revokeObjectURL(url);
+                                }).catch(() => error("Failed to download invoice"));
+                              }}
+                              className="text-[10px] text-[#2874F0] font-medium hover:underline block mt-1"
                             >
-                              {busy ? "Updating..." : "Update"}
+                              Download Invoice
                             </button>
-                          </div>
-                        ) : (
-                          <span className="text-[11px] text-[#878787]">No actions</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Link href={`/seller/orders/${order.id}`} className="text-[#2874F0] text-xs font-medium hover:underline">View Details</Link>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   );

@@ -34,6 +34,7 @@ const productSchema = z.object({
   discountPercentage: z.coerce.number().min(0).max(100).optional(),
   taxPercentage: z.coerce.number().min(0).max(100).optional(),
   stock: z.coerce.number().int().min(0, "Stock must be 0 or more"),
+  weight: z.coerce.number().min(0, "Weight must be positive").optional(),
   lowStockThreshold: z.coerce.number().int().min(0).optional(),
   status: z.enum(["DRAFT", "PENDING_APPROVAL", "OUT_OF_STOCK"]),
   seoTitle: z.string().optional(),
@@ -101,6 +102,7 @@ export default function SellerAddProductPage() {
       discountPercentage: undefined as any,
       taxPercentage: undefined as any,
       stock: undefined as any,
+      weight: undefined as any,
       lowStockThreshold: undefined as any,
       status: "DRAFT",
       seoTitle: "",
@@ -194,6 +196,7 @@ export default function SellerAddProductPage() {
       taxPercentage: Number(values.taxPercentage ?? 0),
       lowStockThreshold: Number(values.lowStockThreshold || 0),
       estimatedDeliveryDays: Number(values.estimatedDeliveryDays ?? 3),
+      weight: Number(values.weight || 0),
       isFreeDelivery: !!values.isFreeDelivery,
       returnPolicy: values.returnPolicy ?? "",
       returnWindowDays: Number(values.returnWindowDays ?? 7),
@@ -310,6 +313,7 @@ export default function SellerAddProductPage() {
                 <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Tax %</label><Input {...form.register("taxPercentage")} type="number" min={0} max={100} /></div>
                 */}
                 <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Stock Quantity</label><Input {...form.register("stock")} type="number" min={0} placeholder="Enter stock quantity" />{form.formState.errors.stock && <p className="text-[10px] text-[#E53935]">{form.formState.errors.stock.message}</p>}</div>
+                <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Weight (g)</label><Input {...form.register("weight")} type="number" min={0} step="1" placeholder="Enter weight in grams" /></div>
                 <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Low Stock Threshold</label><Input {...form.register("lowStockThreshold")} type="number" min={0} placeholder="Enter low stock threshold" /></div>
                 <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Submission Status</label><select {...form.register("status")} className="flex h-10 w-full rounded-sm border border-[#E0E0E0] bg-white px-3 py-2 text-sm text-[#212121] focus-visible:ring-1 focus-visible:ring-[#2874F0]"><option value="DRAFT">Save as Draft</option><option value="PENDING_APPROVAL">Submit for Approval</option></select><p className="text-[10px] text-[#878787]">Submitted products require admin approval before becoming visible to customers.</p></div>
                 <div className="space-y-1.5"><label className="text-xs font-bold text-[#878787] uppercase tracking-wider">Estimated Delivery (days)</label><Input {...form.register("estimatedDeliveryDays")} type="number" min={0} max={30} placeholder="e.g. 3" /></div>

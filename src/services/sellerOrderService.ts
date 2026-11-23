@@ -51,6 +51,11 @@ export const sellerOrderService = {
     await api<any>(`/api/v1/vendor/orders/${orderId}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
     return this.getOrderDetail(orderId, _sellerId);
   },
+  async downloadInvoice(orderId: string): Promise<Blob> {
+    const res = await fetch(`${API_BASE}/api/v1/vendor/orders/${orderId}/invoice`, { method: "GET", credentials: "include" });
+    if (!res.ok) throw new Error("Failed to download invoice");
+    return res.blob();
+  },
   async getTimelineStatuses(): Promise<SellerOrderStatus[]> {
     return ["PLACED", "CONFIRMED", "PROCESSING", "SHIPPED", "OUT_FOR_DELIVERY", "DELIVERED", "CANCELLED"] as SellerOrderStatus[];
   },

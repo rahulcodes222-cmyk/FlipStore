@@ -925,6 +925,59 @@ export async function updateOrderStatus(requesterId: string, requesterRole: stri
   pushHistory(order, aggregated, requesterRole, requesterId, input.note || `Status updated (${targetStatus})`);
   await order.save();
 
+  // Notify seller(s) with invoice when order is confirmed
+  if (aggregated === 'CONFIRMED') {
+    try {
+      const { notifyUser } = await import('@/backend/services/notificationService');
+      const invoice = await getInvoice(String(order._id), requesterId, requesterRole);
+
+      // Group items by seller for per-seller notification
+      const sellersMap = new Map();
+      for (const item of order.items || []) {
+        const sid = String(item.sellerId);
+        if (!sid) continue;
+        if (!sellersMap.has(sid)) {
+          sellersMap.set(sid, { sellerId: sid, items: [], subtotal: 0 });
+        }
+        const s = sellersMap.get(sid);
+        s.items.push(item);
+        s.subtotal += Number(item.price || 0) * Number(item.quantity || 0);
+      }
+
+      for (const [sellerId, sellerInfo] of sellersMap) {
+        await notifyUser({
+          recipientUserId: sellerId,
+          recipientRole: 'vendor',
+          type: 'NEW_VENDOR_ORDER',
+          category: 'ORDER',
+          title: 'New Order Received',
+          message: `Order #${order.orderNumber} has been confirmed. Invoice ${invoice.invoiceNumber} has been generated for your products.`,
+          link: `/seller/orders/${order.orderNumber || order._id}`,
+          metadata: {
+            orderId: String(order._id),
+            orderNumber: order.orderNumber,
+            invoiceNumber: invoice.invoiceNumber,
+            invoice: {
+              invoiceNumber: invoice.invoiceNumber,
+              issuedAt: invoice.issuedAt,
+              orderNumber: invoice.orderNumber,
+              orderId: invoice.orderId,
+              customer: invoice.customer,
+              paymentMethod: invoice.paymentMethod,
+              paymentStatus: invoice.paymentStatus,
+              items: sellerInfo.items,
+              pricing: { ...invoice.pricing, subtotal: sellerInfo.subtotal },
+              placedAt: invoice.placedAt,
+            },
+            items: sellerInfo.items,
+            subtotal: sellerInfo.subtotal,
+          },
+          channels: { inApp: true, email: true },
+        });
+      }
+    } catch {}
+  }
+
   // if cancelled/refunded by admin, handle stock/refund best-effort
   if (isAdmin && (aggregated === 'CANCELLED' || targetStatus === 'CANCELLED')) {
     const wasFinalized = order.paymentMethod === 'COD' || order.paymentStatus === 'PAID' || order.paymentStatus === 'REFUNDED';
@@ -1160,7 +1213,7 @@ export async function updateReturnRequest(requesterId: string, requesterRole: st
 export async function getInvoice(orderId: string, requesterId: string, requesterRole: string) {
   const view: any = await getOrderById(requesterId, requesterRole, orderId);
   if (!view) throw new Error('Order not found.');
-  if (isVendorRole(requesterRole)) throw new Error('Forbidden');
+  // getOrderById already enforces vendor access (vendor must own a sub-order in this order)
   return {
     invoiceNumber: view.invoice?.invoiceNumber || `INV-${view.orderNumber}`,
     issuedAt: view.placedAt || view.createdAt,
