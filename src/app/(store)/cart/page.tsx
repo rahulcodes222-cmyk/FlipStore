@@ -518,7 +518,7 @@ export default function CartPage() {
   }
 
   const summary = getSummary(deliverySettings || undefined);
-  const finalPayable = Math.max(0, summary.subtotal - couponDiscount + (realTimeDeliveryRate ?? summary.deliveryCharges));
+  const finalPayable = Math.max(0, summary.subtotal - couponDiscount + summary.deliveryCharges + summary.taxAmount + (realTimeDeliveryRate ?? 0));
   const totalSavingsWithCoupon = summary.totalSavings + couponDiscount;
 
   return (
@@ -709,6 +709,13 @@ export default function CartPage() {
                     <div className="flex justify-between text-[#388E3C] font-semibold">
                       <span>Coupon ({appliedCoupon?.code})</span>
                       <span>−₹{couponDiscount.toLocaleString("en-IN")}</span>
+                    </div>
+                  )}
+
+                  {summary.taxAmount > 0 && (
+                    <div className="flex justify-between text-xs text-[#666]">
+                      <span>Tax ({summary.taxAmount > 0 ? 'GST' : ''})</span>
+                      <span>₹{summary.taxAmount.toLocaleString("en-IN")}</span>
                     </div>
                   )}
 

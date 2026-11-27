@@ -1,5 +1,9 @@
 import { CartItem, Coupon, Product } from "@/types";
-import { APP_CONFIG } from "@/lib/theme";
+import {
+  getStandardDeliveryCharge,
+  getFreeDeliveryThreshold,
+  getTaxPercentage,
+} from "@/lib/storeSettings";
 
 const CART_STORAGE_KEY = "my_ecommerce_cart_v1";
 
@@ -9,6 +13,7 @@ export interface CartCalculationSummary {
   discountOnMrp: number;
   subtotal: number;
   couponDiscount: number;
+  taxAmount: number;
   deliveryCharges: number;
   totalPayable: number;
   totalSavings: number;
@@ -126,9 +131,14 @@ export const cartService = {
       }
     }
 
-    // Use backend-configured delivery settings if provided, else fall back to APP_CONFIG defaults
-    const standardFee = deliverySettings?.standardFee ?? APP_CONFIG.delivery.standardFee;
-    const freeThreshold = deliverySettings?.freeThreshold ?? APP_CONFIG.delivery.freeThreshold;
+    // Tax on subtotal after discount (excluding coupon)
+    const taxableAmount = Math.max(0, subtotal - couponDiscount);
+    const taxRate = getTaxPercentage();
+    const taxAmount = Math.round((taxableAmount * taxRate) / 100);
+
+    // Use backend-configured delivery settings if provided, else fall back to stored admin settings, else APP_CONFIG defaults
+    const standardFee = deliverySettings?.standardFee ?? getStandardDeliveryCharge();
+    const freeThreshold = deliverySettings?.freeThreshold ?? getFreeDeliveryThreshold();
 
     // Free delivery if subtotal after discount >= freeThreshold, else standard fee
     const deliveryCharges =
@@ -136,7 +146,7 @@ export const cartService = {
         ? 0
         : standardFee;
 
-    const totalPayable = Math.max(0, subtotal - couponDiscount + deliveryCharges);
+    const totalPayable = Math.max(0, subtotal - couponDiscount + deliveryCharges + taxAmount);
     const totalSavings = discountOnMrp + couponDiscount;
 
     return {
@@ -145,6 +155,7 @@ export const cartService = {
       discountOnMrp,
       subtotal,
       couponDiscount,
+      taxAmount,
       deliveryCharges,
       totalPayable,
       totalSavings,

@@ -24,3 +24,4 @@ export { default as FinancialLedgerModel } from './FinancialLedger';
 export { default as CommissionConfigModel } from './CommissionConfig';
 export { default as SupportTicketModel } from './SupportTicket';
 export { default as PlatformSettingModel } from './PlatformSetting';
+export { default as StaticPageModel } from './StaticPage';

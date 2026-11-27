@@ -1,17 +1,19 @@
 import { APP_CONFIG } from "@/lib/theme";
+import { getCurrencySymbol } from "@/lib/storeSettings";
 
 /**
- * Formats a number to Indian Rupee currency format (e.g., ₹1,49,999)
+ * Formats a number to currency format using the store's configured currency symbol.
+ * Reads the currency symbol from admin settings (localStorage), falling back to APP_CONFIG.
  */
 export function formatPrice(amount: number): string {
   if (isNaN(amount) || amount === null || amount === undefined) {
-    return `${APP_CONFIG.currency.symbol}0`;
+    return `${getCurrencySymbol()}0`;
   }
   const formatted = new Intl.NumberFormat(APP_CONFIG.currency.locale, {
     maximumFractionDigits: 0,
   }).format(amount);
 
-  return `${APP_CONFIG.currency.symbol}${formatted}`;
+  return `${getCurrencySymbol()}${formatted}`;
 }
 
 /**

@@ -1,4 +1,6 @@
-import React from "react";
+"use client";
+
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import {
   Globe,
@@ -11,6 +13,11 @@ import {
   Headphones,
   CreditCard,
 } from "lucide-react";
+import {
+  getStoreName,
+  getSupportEmail,
+  getSupportPhone,
+} from "@/lib/storeSettings";
 
 const FOOTER_LINKS = {
   "About": [
@@ -20,17 +27,17 @@ const FOOTER_LINKS = {
     { label: "Corporate Information", href: "/corporate" },
   ],
   "Help": [
-    { label: "Payments", href: "/help/payments" },
-    { label: "Shipping", href: "/help/shipping" },
-    { label: "Cancellation & Returns", href: "/help/returns" },
-    { label: "FAQ", href: "/help/faq" },
-    { label: "Report Infringement", href: "/help/report" },
+    { label: "Payments", href: "/payments" },
+    { label: "Shipping", href: "/shipping" },
+    { label: "Cancellation & Returns", href: "/returns" },
+    { label: "FAQ", href: "/faq" },
+    { label: "Report Infringement", href: "/report-infringement" },
   ],
   "Policy": [
-    { label: "Return Policy", href: "/policy/returns" },
-    { label: "Terms of Use", href: "/policy/terms" },
-    { label: "Security", href: "/policy/security" },
-    { label: "Privacy", href: "/policy/privacy" },
+    { label: "Return Policy", href: "/returns" },
+    { label: "Terms of Use", href: "/terms" },
+    { label: "Security", href: "/security" },
+    { label: "Privacy", href: "/privacy" },
     { label: "Sitemap", href: "/sitemap" },
   ],
   "Social": [
@@ -50,6 +57,18 @@ const TRUST_BADGES = [
 ];
 
 export function Footer() {
+  const [storeName, setStoreName] = useState<string>("FlipStore");
+  const [supportEmail, setSupportEmail] = useState<string>("support@flipstore.in");
+  const [supportPhone, setSupportPhone] = useState<string>("");
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  useEffect(() => {
+    setIsHydrated(true);
+    setStoreName(getStoreName());
+    setSupportEmail(getSupportEmail());
+    setSupportPhone(getSupportPhone());
+  }, []);
+
   return (
     <footer className="bg-[#172337] text-white mt-auto">
       {/* Trust Badges Strip */}
@@ -98,12 +117,30 @@ export function Footer() {
           {/* Logo & Description */}
           <div className="flex flex-col items-center md:items-start gap-1">
             <div className="flex items-center gap-2">
-              <span className="text-white font-bold text-xl">FlipStore</span>
+              <span className="text-white font-bold text-xl">{storeName}</span>
               <span className="text-[#ffe500] text-xs italic font-medium">India</span>
             </div>
             <p className="text-gray-400 text-xs text-center md:text-left">
               India&apos;s Most Trusted Online Shopping Destination
             </p>
+          </div>
+
+          {/* Support Contact */}
+          <div className="flex flex-col items-center md:items-start gap-2 hidden md:flex">
+            <div className="flex items-center gap-2">
+              <Headphones size={14} className="text-[#2874F0]" />
+              <div>
+                <span className="text-xs font-semibold text-white block">{supportPhone}</span>
+                <span className="text-[10px] text-gray-400">Support Helpline</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <MessageCircle size={14} className="text-[#2874F0]" />
+              <div>
+                <span className="text-xs font-semibold text-white block">{supportEmail}</span>
+                <span className="text-[10px] text-gray-400">Support Email</span>
+              </div>
+            </div>
           </div>
 
           {/* Social Links */}
@@ -148,7 +185,7 @@ export function Footer() {
 
           {/* Copyright */}
           <div className="text-gray-500 text-xs text-center md:text-right">
-            <p>© 2026 FlipStore Internet Private Limited.</p>
+            <p>© {new Date().getFullYear()} {storeName} Internet Private Limited.</p>
             <p>All rights reserved.</p>
           </div>
         </div>

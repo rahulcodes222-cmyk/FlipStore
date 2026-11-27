@@ -58,6 +58,12 @@ const getters: Record<string, () => unknown> = {
   notificationEmailProvider: () => getOptional('NOTIFICATION_EMAIL_PROVIDER', ''),
   notificationEmailFrom: () => getOptional('NOTIFICATION_EMAIL_FROM', ''),
   notificationEmailApiKey: () => getOptional('NOTIFICATION_EMAIL_API_KEY', ''),
+  smtpHost: () => getOptional('SMTP_HOST', ''),
+  smtpPort: () => getOptionalNumber('SMTP_PORT', 587),
+  smtpUser: () => getOptional('SMTP_USER', ''),
+  smtpPass: () => getOptional('SMTP_PASS', ''),
+  smtpSecure: () => getOptional('SMTP_SECURE', 'false') === 'true',
+  contactAdminEmail: () => getOptional('CONTACT_ADMIN_EMAIL', 'rahulcodes222@gmail.com'),
   notificationSmsProvider: () => getOptional('NOTIFICATION_SMS_PROVIDER', ''),
   notificationSmsFrom: () => getOptional('NOTIFICATION_SMS_FROM', ''),
   notificationSmsApiKey: () => getOptional('NOTIFICATION_SMS_API_KEY', ''),
@@ -101,6 +107,12 @@ type EnvShape = {
   notificationEmailProvider: string;
   notificationEmailFrom: string;
   notificationEmailApiKey: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpPass: string;
+  smtpSecure: boolean;
+  contactAdminEmail: string;
   notificationSmsProvider: string;
   notificationSmsFrom: string;
   notificationSmsApiKey: string;

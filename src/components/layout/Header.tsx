@@ -25,12 +25,14 @@ import { CategoryNavigation } from "@/components/layout/CategoryNavigation";
 import { MobileMenu } from "@/components/layout/MobileMenu";
 import { DeliveryLocationSelector } from "@/components/layout/DeliveryLocationSelector";
 import { cn } from "@/lib/utils";
+import { getStoreName } from "@/lib/storeSettings";
 
 export function Header() {
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [storeName, setStoreName] = useState<string>("FlipStore");
 
   const userDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -46,6 +48,13 @@ export function Header() {
   const wishlistCount = isHydrated ? rawWishlistCount : 0;
   const currentUser = isHydrated ? user : null;
   const isUserLoggedIn = isHydrated ? isAuthenticated : false;
+
+  // Load store name from admin settings after hydration
+  useEffect(() => {
+    if (isHydrated) {
+      setStoreName(getStoreName());
+    }
+  }, [isHydrated]);
 
   // Close account dropdown on outside click or Escape
   useEffect(() => {
@@ -97,7 +106,7 @@ export function Header() {
               <Link href="/" className="flex flex-col leading-none group">
                 <div className="flex items-center gap-1">
                   <span className="text-white font-extrabold text-xl sm:text-2xl tracking-tight italic">
-                    FlipStore
+                    {storeName}
                   </span>
                   <span className="text-[#ffe500] text-sm">✦</span>
                 </div>

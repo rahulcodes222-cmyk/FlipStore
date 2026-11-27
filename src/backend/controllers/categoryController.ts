@@ -271,8 +271,8 @@ export const categoryIdPATCH = withDatabase(
       }
 
       const url = new URL(authReq.url);
-      const pathSegments = url.pathname.split('/');
-      const categoryId = pathSegments[pathSegments.length - 2];
+      const pathSegments = url.pathname.split('/').filter(Boolean);
+      const categoryId = pathSegments[pathSegments.length - 1];
 
       const paramResult = categoryIdParamSchema.safeParse({ id: categoryId });
       if (!paramResult.success) {
@@ -381,8 +381,8 @@ export const categoryIdDELETE = withDatabase(
       }
 
       const url = new URL(authReq.url);
-      const pathSegments = url.pathname.split('/');
-      const categoryId = pathSegments[pathSegments.length - 2];
+      const pathSegments = url.pathname.split('/').filter(Boolean);
+      const categoryId = pathSegments[pathSegments.length - 1];
 
       const paramResult = categoryIdParamSchema.safeParse({ id: categoryId });
       if (!paramResult.success) {

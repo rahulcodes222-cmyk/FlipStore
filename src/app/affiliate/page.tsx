@@ -1,26 +1,11 @@
 import { Metadata } from "next";
-import Link from "next/link";
+import HelpPageClient from "../(store)/help/[slug]/HelpPageClient";
 
 export const metadata: Metadata = {
-  title: "Become Affiliate - FlipStore",
-  description: "FlipStore Affiliate Program",
+  title: "Become an Affiliate | FlipStore",
+  description: "Join the FlipStore affiliate program.",
 };
 
 export default function AffiliatePage() {
-  return (
-    <div className="bg-[#F1F3F6] min-h-screen py-12">
-      <div className="max-w-[800px] mx-auto px-4">
-        <div className="bg-white border border-[#E0E0E0] rounded-sm p-6 sm:p-12 shadow-sm">
-          <h1 className="text-2xl font-bold text-[#212121] mb-6">Become an Affiliate</h1>
-          <p className="text-[#555] leading-relaxed mb-4">
-            Earn commission by promoting FlipStore products. Join our affiliate program and start
-            earning today.
-          </p>
-          <Link href="/" className="text-[#2874F0] font-semibold hover:underline">
-            &larr; Continue Shopping
-          </Link>
-        </div>
-      </div>
-    </div>
-  );
+  return <HelpPageClient slug="affiliate" showRelatedTabs={false} />;
 }

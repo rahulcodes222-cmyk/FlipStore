@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import Image from "next/image";
 import {
   Layers,
@@ -12,12 +12,16 @@ import {
   AlertCircle,
   FolderOpen,
   Search,
+  Upload,
+  Loader2,
 } from "lucide-react";
 import { Category } from "@/types";
 import { adminService } from "@/services/adminService";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || "";
 
 export function AdminCategoriesClient() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -33,6 +37,8 @@ export function AdminCategoriesClient() {
   const [image, setImage] = useState("");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   // Search & filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -93,6 +99,46 @@ export function AdminCategoriesClient() {
     setName(val);
     if (!editingCategory) {
       setSlug(val.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""));
+    }
+  };
+
+  function getUploadToken(): string | null {
+    if (typeof window === "undefined") return null;
+    try { return window.localStorage.getItem("my_ecommerce_access_token_v1"); } catch { return null; }
+  }
+
+  async function uploadImage(file: File): Promise<string> {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("folder", "categories");
+    const token = getUploadToken();
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE}/api/v1/uploads`, {
+      method: "POST",
+      credentials: "include",
+      headers,
+      body: form,
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false)
+      throw new Error(json?.message || json?.error?.message || "Image upload failed.");
+    const url = json?.data?.url;
+    if (!url) throw new Error("Upload did not return an image URL.");
+    return String(url);
+  }
+
+  const doUpload = async (file: File | null) => {
+    if (!file) return;
+    setUploading(true);
+    setErrorMsg(null);
+    try {
+      const url = await uploadImage(file);
+      setImage(url);
+    } catch (e: any) {
+      setErrorMsg(e?.message || "Upload failed.");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -296,9 +342,47 @@ export function AdminCategoriesClient() {
                 <label className="block text-xs font-semibold text-gray-700 mb-1">URL Slug <span className="text-red-500">*</span></label>
                 <Input required value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="smart-watches" className="h-9 text-xs font-mono" />
               </div>
-              <div>
+              <div className="space-y-2">
                 <label className="block text-xs font-semibold text-gray-700 mb-1">Image Banner URL</label>
-                <Input value={image} onChange={(e) => setImage(e.target.value)} placeholder="https://images.unsplash.com/..." className="h-9 text-xs" />
+                <div className="border border-dashed border-gray-300 rounded-sm p-3 bg-gray-50 space-y-2">
+                  {image ? (
+                    <div className="relative w-full h-28 bg-white border border-gray-200 rounded overflow-hidden">
+                      <Image src={image} alt={name || "Category"} fill className="object-cover" />
+                    </div>
+                  ) : (
+                    <div className="h-28 flex items-center justify-center text-gray-400 text-xs">No image selected</div>
+                  )}
+                  <input
+                    ref={imageInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={(e) => void doUpload(e.target.files?.[0] || null)}
+                  />
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="text-xs h-8"
+                      disabled={!!uploading}
+                      onClick={() => imageInputRef.current?.click()}
+                    >
+                      {uploading ? (
+                        <Loader2 size={13} className="animate-spin mr-1" />
+                      ) : (
+                        <Upload size={13} className="mr-1" />
+                      )}
+                      Upload Image
+                    </Button>
+                  </div>
+                  <Input
+                    value={image}
+                    onChange={(e) => setImage(e.target.value)}
+                    placeholder="https://images.unsplash.com/..."
+                    className="h-8 text-xs"
+                  />
+                </div>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">Description</label>

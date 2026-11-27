@@ -73,6 +73,7 @@ export interface StoreSettings {
   standardDeliveryCharge: number;
   maintenanceMode: boolean;
   announcementBanner: string;
+  aboutUsContent: string;
 }
 
 const DEFAULT_SETTINGS: StoreSettings = {
@@ -85,6 +86,7 @@ const DEFAULT_SETTINGS: StoreSettings = {
   standardDeliveryCharge: 40,
   maintenanceMode: false,
   announcementBanner: "Big Billion Days are Live! Enjoy up to 80% off across electronics and fashion.",
+  aboutUsContent: "",
 };
 
 // ─── LocalStorage Helpers ─────────────────────────────────────────────────────
